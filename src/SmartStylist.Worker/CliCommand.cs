@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SmartStylist.Modules.Catalog.Affiliates;
 using SmartStylist.Modules.Catalog.Collection;
+using SmartStylist.Modules.Catalog.Evidence;
 using SmartStylist.Modules.Catalog.Newsletters;
 using SmartStylist.Modules.Catalog.Persistence;
 using SmartStylist.Modules.Catalog.Reporting;
@@ -12,7 +13,7 @@ namespace SmartStylist.Worker;
 
 internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, int? Limit, bool UseBrowser, string? Folder)
 {
-    private static readonly string[] Commands = ["collect", "report", "migrate", "install-browser", "probe", "newsletters", "awin", "awin-feeds", "detect"];
+    private static readonly string[] Commands = ["collect", "report", "migrate", "install-browser", "probe", "newsletters", "awin", "awin-feeds", "detect", "wayback", "import-prices"];
 
     public static CliCommand? Parse(string[] args)
     {
@@ -65,7 +66,7 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
             return await ProbeAsync(provider.GetRequiredService<ProductPageProbe>(), cancellationToken);
         }
 
-        if (Name is "migrate" or "collect" or "newsletters" or "awin" or "detect")
+        if (Name is "migrate" or "collect" or "newsletters" or "awin" or "detect" or "wayback" or "import-prices")
         {
             await provider.GetRequiredService<CatalogDbContext>().Database.MigrateAsync(cancellationToken);
             await provider.GetRequiredService<WardrobeDbContext>().Database.MigrateAsync(cancellationToken);
@@ -99,6 +100,16 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
         if (Name == "detect")
         {
             await DetectAsync(provider, runLog, cancellationToken);
+        }
+
+        if (Name == "wayback")
+        {
+            await WaybackAsync(provider.GetRequiredService<WaybackSeedService>(), runLog, cancellationToken);
+        }
+
+        if (Name == "import-prices")
+        {
+            await ImportPricesAsync(provider.GetRequiredService<ManualPriceImport>(), runLog, cancellationToken);
         }
 
         if (Name is "awin" or "awin-feeds")
@@ -177,6 +188,70 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
         }
 
         await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Seeds price history from archive.org copies. Arguments are shop keys (their products with under two weeks of
+    /// prices) or product page addresses. --limit caps the products (default 20); 12 copies are read per product.
+    /// </summary>
+    private async Task WaybackAsync(WaybackSeedService wayback, RunLogFile runLog, CancellationToken cancellationToken)
+    {
+        const int copies = 12;
+        var urls = ShopKeys.Where(k => k.StartsWith("http", StringComparison.OrdinalIgnoreCase)).ToList();
+        var shops = ShopKeys.Except(urls).ToList();
+        var results = new List<WaybackSeedResult>();
+        foreach (var url in urls)
+        {
+            results.Add(await wayback.SeedUrlAsync(new Uri(url), null, copies, cancellationToken));
+        }
+
+        if (shops.Count > 0 || urls.Count == 0)
+        {
+            results.Add(await wayback.SeedShopsAsync(shops, Limit ?? 20, copies, cancellationToken));
+        }
+
+        foreach (var note in results.SelectMany(r => r.Notes))
+        {
+            Console.WriteLine(note);
+            runLog.WriteLine(note);
+        }
+
+        var summary = $"Wayback: {results.Sum(r => r.Products)} products, {results.Sum(r => r.PagesRead)} archived pages read, " +
+                      $"{results.Sum(r => r.PagesWithPrice)} with a price, {results.Sum(r => r.PricesAdded)} prices added as outside evidence.";
+        Console.WriteLine(summary);
+        runLog.WriteLine(summary);
+    }
+
+    /// <summary>Imports a CSV of dated prices (date, url, price, optional title, shop, currency, list_price, size, colour).</summary>
+    private async Task ImportPricesAsync(ManualPriceImport import, RunLogFile runLog, CancellationToken cancellationToken)
+    {
+        if (ShopKeys.Count == 0 || !File.Exists(ShopKeys[0]))
+        {
+            Console.WriteLine("Usage: import-prices <file.csv>   (columns: date, url, price; optional title, shop, currency, list_price, size, colour)");
+            return;
+        }
+
+        using var reader = File.OpenText(ShopKeys[0]);
+        ManualImportResult result;
+        try
+        {
+            result = await import.ImportAsync(reader, cancellationToken);
+        }
+        catch (FormatException ex)
+        {
+            Console.WriteLine(ex.Message);
+            return;
+        }
+
+        foreach (var line in result.Skipped)
+        {
+            Console.WriteLine($"skipped {line}");
+            runLog.WriteLine($"skipped {line}");
+        }
+
+        var summary = $"{result.Rows} rows read, {result.PricesAdded} prices added as outside evidence, {result.Skipped.Count} skipped.";
+        Console.WriteLine(summary);
+        runLog.WriteLine(summary);
     }
 
     private async Task AwinAsync(AwinFeedImportService awin, RunLogFile runLog, CancellationToken cancellationToken)

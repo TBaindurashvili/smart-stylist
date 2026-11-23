@@ -44,6 +44,7 @@ internal sealed class TestHost : IAsyncDisposable
         services.AddOptions<CatalogOptions>().Configure(o =>
         {
             o.RequestDelayMs = 0;
+            o.ArchiveDelayMs = 0;
             o.MaxProductsPerShop = 50;
             o.Shops = [.. shops];
         });
@@ -65,6 +66,7 @@ internal sealed class TestHost : IAsyncDisposable
         services.AddCatalogCollection();
         services.AddHttpClient(HttpPageFetcher.ClientName).ConfigurePrimaryHttpMessageHandler(() => Web);
         services.AddHttpClient(AwinFeedImportService.ClientName).ConfigurePrimaryHttpMessageHandler(() => Web);
+        services.AddHttpClient(Evidence.WaybackSeedService.ClientName).ConfigurePrimaryHttpMessageHandler(() => Web);
         services.AddOptions<AwinOptions>().Configure(o => o.ApiKey = "test-key");
         services.AddSingleton<TimeProvider>(Time);
         services.AddSingleton<INewsletterExtractor>(Extractor);
@@ -154,6 +156,18 @@ internal sealed class FakeWeb : HttpMessageHandler
 
     public void Serve(string url, byte[] content) =>
         _routes[url] = () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) };
+
+    public void Serve(string url, HttpStatusCode status, string content, params (string Name, string Value)[] headers) =>
+        _routes[url] = () =>
+        {
+            var response = new HttpResponseMessage(status) { Content = new StringContent(content, System.Text.Encoding.UTF8, "text/html") };
+            foreach (var (name, value) in headers)
+            {
+                response.Headers.TryAddWithoutValidation(name, value);
+            }
+
+            return response;
+        };
 
     public void Remove(string url) => _routes.Remove(url);
 

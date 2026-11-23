@@ -20,11 +20,6 @@ public sealed class PlatformDetector(IHttpClientFactory httpClients)
     {
         var http = httpClients.CreateClient(HttpPageFetcher.ClientName);
         using var response = await http.GetAsync(shopRoot, cancellationToken);
-        if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests or (HttpStatusCode)418)
-        {
-            return new PlatformDetection(ShopPlatform.Unknown, $"home page answered {(int)response.StatusCode} (blocked)");
-        }
-
         var headers = response.Headers.Concat(response.Content.Headers)
             .GroupBy(h => h.Key, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key.ToLowerInvariant(), g => string.Join(", ", g.SelectMany(h => h.Value)));
@@ -32,6 +27,16 @@ public sealed class PlatformDetector(IHttpClientFactory httpClients)
             ? setCookies.Select(c => c.Split('=', 2)[0].Trim()).ToList()
             : [];
         var html = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        var wall = BotWall.Detect((int)response.StatusCode, headers, html);
+        if (wall is not null || response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests or (HttpStatusCode)418)
+        {
+            // The block page often still names the platform (Demandware paths, Shopify CDN), so try anyway.
+            var behind = Detect(new PlatformProbe(html, headers, cookies));
+            return new PlatformDetection(behind.Platform,
+                $"home page answered {(int)response.StatusCode}, blocked by {wall ?? "an unnamed bot check"}" +
+                (behind.Platform == ShopPlatform.Unknown ? "" : $"; {behind.Evidence}"));
+        }
 
         var detection = Detect(new PlatformProbe(html, headers, cookies));
         if (detection.Platform is ShopPlatform.Unknown or ShopPlatform.Shopify && await HasShopifyFeedAsync(http, shopRoot, cancellationToken))

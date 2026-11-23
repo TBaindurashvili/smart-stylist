@@ -54,7 +54,7 @@ else
                         </td>
                         <td>
                             <span class="pill verdict-@Css(a.Verdict)">@Label(a.Verdict)</span>
-                            <div class="reason">@a.Reason</div>
+                            <div class="reason">@a.Reason@if (a.LowConfidence) {<span class="confidence low" title="Judged partly from archived pages or notes, not two weeks of own prices"> less certain</span>}</div>
                         </td>
                         <td class="num">@Money(row.Price, row.Currency)</td>
                         <td class="num">
@@ -111,6 +111,8 @@ else
         PriceSource.Newsletter => "sale email",
         PriceSource.Extension => "saved in browser",
         PriceSource.AffiliateFeed => "Awin feed",
+        PriceSource.Archive => "archived page",
+        PriceSource.Manual => "your notes",
         _ => "collector",
     };
 

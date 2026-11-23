@@ -58,6 +58,25 @@ Each shop is tried with the cheapest source first, and the one that works is rem
    price tags) on each product page, over plain HTTP. Most big shops publish this for Google Shopping.
 3. **BrowserJsonLd**: the same, but pages are opened in headless Chromium, for shops that block plain HTTP clients.
 
+### Blocked shops and a real Chrome window
+
+When a shop answers with a bot-protection page, the collectors, `probe` and `detect` say who blocked it
+(Akamai, Cloudflare, PerimeterX, DataDome, Imperva, Kasada...) and stop. The app never solves a challenge or
+CAPTCHA, never logs in and never checks out. To try a shop the way a person would, from the home connection,
+drive the installed Google Chrome in a visible window with a profile kept between runs, at a slow pace:
+
+```bash
+dotnet user-secrets set "Catalog:Browser:Channel" "chrome" --project src/SmartStylist.Worker
+dotnet user-secrets set "Catalog:Browser:Headless" "false" --project src/SmartStylist.Worker
+dotnet user-secrets set "Catalog:Browser:UserDataDir" "$HOME/.smart-stylist-chrome" --project src/SmartStylist.Worker
+dotnet user-secrets set "Catalog:RequestDelayMs" "6000" --project src/SmartStylist.Worker
+dotnet run --project src/SmartStylist.Worker -- probe "https://www.levi.com/US/en_US/.../p/045415" --browser
+```
+
+Use a separate profile folder, not your everyday Chrome profile: Chrome locks a profile while it is open.
+The user agent and fingerprint are left as Chrome reports them; faking them is the aggressive evasion this app
+stays away from. A shop that still blocks a real Chrome is a job for an affiliate feed, sale emails or the extension.
+
 Up to 300 products per shop are priced each day (`Catalog:MaxProductsPerShop`). Products priced in the last
 week are revisited first, so the same items build a continuous history. One price is stored per product size
 per day; a second run on the same day overwrites it.
@@ -125,6 +144,26 @@ To use it, start the web app, open `chrome://extensions`, turn on Developer mode
 the `extension` folder. Nothing is saved while the app is off; the toolbar icon then shows a red `!`.
 
 A new shop has to be added both to `Catalog:Shops` and to `matches` in `extension/manifest.json`.
+
+## Outside evidence: history before two weeks
+
+A verdict normally needs 14 days of the app's own prices. To judge sales sooner (before Black Friday), seed
+history from prices the app did not see itself. They are stored with source `Archive` or `Manual`, never
+overwrite a price the app saw on the same day, and a verdict that leans on them says "Less certain" and shows
+a "less certain" tag on /deals. Outside evidence counts once it gives 3+ earlier days spread over 21+ days.
+
+```bash
+# Old copies of product pages from the Wayback Machine (archive.org), up to 12 per product, one request every 4 s.
+dotnet run --project src/SmartStylist.Worker -- wayback taylorstitch --limit 20      # a shop's products with < 14 days
+dotnet run --project src/SmartStylist.Worker -- wayback "https://www.jcrew.com/p/..."  # one page (added if new)
+
+# Dated prices written down elsewhere (e.g. the stylist's Recommended and near-miss tables).
+dotnet run --project src/SmartStylist.Worker -- import-prices prices.csv
+```
+
+The CSV needs a header with `date`, `url` and `price`; `title`, `shop`, `currency`, `list_price`, `size` and
+`colour` are optional. Dates like `2026-10-14` or `Oct 14 2026`. Keepa covers Amazon price history but needs a paid
+API key, so it is not wired in.
 
 ## Price-history API
 
@@ -207,15 +246,15 @@ folder, then:
 dotnet run --project src/SmartStylist.Worker -- newsletters --folder ~/sale-emails
 ```
 
-To read a mailbox every hour, fill in `Newsletters:Imap` and set the password as a secret. For Gmail, make a
-label (e.g. `Sales`) with a filter that applies it to shop emails, and create an app password
+To read a mailbox every hour, fill in `Newsletters:Imap` and set the password as a secret. The default folder is
+Gmail's `[Gmail]/All Mail`, so emails that a filter or the stylist routine labelled and archived (e.g.
+`Stylist/Reviewed`) are read too; set `Imap:Folder` to one label to read only that. Create an app password
 (Google account → Security → 2-Step Verification → App passwords):
 
 ```bash
 dotnet user-secrets set "Newsletters:Imap:Host" "imap.gmail.com" --project src/SmartStylist.Worker
 dotnet user-secrets set "Newsletters:Imap:Username" "you@gmail.com" --project src/SmartStylist.Worker
 dotnet user-secrets set "Newsletters:Imap:Password" "<app password>" --project src/SmartStylist.Worker
-dotnet user-secrets set "Newsletters:Imap:Folder" "Sales" --project src/SmartStylist.Worker
 dotnet run --project src/SmartStylist.Worker -- newsletters
 ```
 

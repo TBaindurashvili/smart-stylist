@@ -24,12 +24,14 @@ public enum DealVerdict
 }
 
 /// <summary>One earlier day of a product: its lowest price that day and whether the shop showed a "was" price.</summary>
-public sealed record PricePoint(DateOnly Day, decimal Price, bool OnSale);
+/// <param name="Outside">Outside evidence (an archived page or a written-down price), not a price the app saw itself.</param>
+public sealed record PricePoint(DateOnly Day, decimal Price, bool OnSale, bool Outside = false);
 
 /// <summary>A price judged against the product's own history.</summary>
 /// <param name="ClaimedDiscount">What the shop's crossed-out price says, 0.3 = 30% off.</param>
 /// <param name="RealDiscount">Below the usual (median) price of earlier days; null while there is too little history.</param>
 /// <param name="Reason">One line: buy now or wait, and why.</param>
+/// <param name="LowConfidence">The verdict leans on outside evidence because the app has under two weeks of its own prices.</param>
 public sealed record DealAssessment(
     DealVerdict Verdict,
     string Reason,
@@ -38,7 +40,8 @@ public sealed record DealAssessment(
     decimal? UsualPrice,
     decimal? LowestBefore,
     DateOnly? LowestOn,
-    int Days);
+    int Days,
+    bool LowConfidence = false);
 
 public sealed record DealRow(
     long ProductId,
@@ -65,6 +68,14 @@ public sealed class DealsReport(CatalogDbContext db, TimeProvider time)
     /// <summary>Days of earlier prices needed before a verdict, about two weeks of daily prices.</summary>
     public const int MinHistoryDays = 14;
 
+    /// <summary>
+    /// Outside evidence is enough for a first, less certain verdict when it gives at least this many earlier days
+    /// spread over at least <see cref="MinOutsideSpanDays"/> days.
+    /// </summary>
+    public const int MinOutsideDays = 3;
+
+    public const int MinOutsideSpanDays = 21;
+
     /// <summary>An item on sale on fewer than this share of earlier days is "usually not on sale".</summary>
     public const decimal RarelyOnSaleShare = 0.2m;
 
@@ -77,7 +88,11 @@ public sealed class DealsReport(CatalogDbContext db, TimeProvider time)
     {
         decimal? claimed = listPrice > price ? Math.Round((listPrice.Value - price) / listPrice.Value, 4) : null;
         var days = earlier.Count + 1;
-        if (earlier.Count < MinHistoryDays)
+        var ownDays = earlier.Count(p => !p.Outside);
+        var outsideDays = earlier.Count - ownDays;
+        var span = earlier.Count == 0 ? 0 : earlier.Max(p => p.Day).DayNumber - earlier.Min(p => p.Day).DayNumber;
+        var lowConfidence = ownDays < MinHistoryDays;
+        if (lowConfidence && (outsideDays == 0 || earlier.Count < MinOutsideDays || span < MinOutsideSpanDays))
         {
             return new DealAssessment(DealVerdict.StillLearning,
                 $"Only {days} day(s) of prices so far, so it's too early to say whether this sale is real.",
@@ -95,7 +110,8 @@ public sealed class DealsReport(CatalogDbContext db, TimeProvider time)
         string Day(DateOnly day) => day.ToString("MMM d", CultureInfo.InvariantCulture);
 
         DealAssessment Result(DealVerdict verdict, string reason) =>
-            new(verdict, reason, claimed, real, usual, lowest, lowestPoint.Day, days);
+            new(verdict, lowConfidence ? $"{reason} Less certain: {outsideDays} of {earlier.Count} earlier days are outside evidence (archived pages or notes)." : reason,
+                claimed, real, usual, lowest, lowestPoint.Day, days, lowConfidence);
 
         if (price < usual && price <= lowest)
         {
@@ -152,7 +168,7 @@ public sealed class DealsReport(CatalogDbContext db, TimeProvider time)
                 .Where(s => s.ObservedOn < lastDay && s.Currency == latest.Currency)
                 .GroupBy(s => s.ObservedOn)
                 .Select(g => g.MinBy(s => s.Price)!)
-                .Select(s => new PricePoint(s.ObservedOn, s.Price, s.ListPrice > s.Price))
+                .Select(s => new PricePoint(s.ObservedOn, s.Price, s.ListPrice > s.Price, s.Source.IsOutsideEvidence()))
                 .ToList();
 
             var assessment = Assess(earlier, latest.Price, latest.ListPrice, latest.Currency);
