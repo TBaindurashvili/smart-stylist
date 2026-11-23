@@ -50,24 +50,37 @@ internal static class OutsideEvidenceWriter
         return product;
     }
 
-    /// <summary>Adds one day of prices; returns how many were new. Days the app already has for a variant are left alone.</summary>
-    public static async Task<int> AddAsync(CatalogDbContext db, Product product, DateOnly day, IEnumerable<ScrapedOffer> offers,
-        string fallbackCurrency, PriceSource source, DateTimeOffset now, CancellationToken cancellationToken)
+    /// <summary>
+    /// Adds one day of prices; returns how many were new and how many the sanity check refused.
+    /// Days the app already has for a variant are left alone.
+    /// </summary>
+    public static async Task<(int Added, int Rejected)> AddAsync(CatalogDbContext db, PriceSanityCheck sanity, Product product, DateOnly day,
+        IEnumerable<ScrapedOffer> offers, string fallbackCurrency, PriceSource source, DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var existing = await db.PriceSnapshots
-            .Where(s => s.ProductId == product.Id && s.ObservedOn == day)
-            .Select(s => s.VariantKey)
+        var known = await db.PriceSnapshots
+            .Where(s => s.ProductId == product.Id)
+            .Select(s => new { s.VariantKey, s.ObservedOn, s.Currency, s.Price })
             .ToListAsync(cancellationToken);
-        var taken = existing.ToHashSet(StringComparer.Ordinal);
+        var taken = known.Where(s => s.ObservedOn == day).Select(s => s.VariantKey).ToHashSet(StringComparer.Ordinal);
 
-        var added = 0;
+        int added = 0, rejected = 0;
         foreach (var offer in offers.GroupBy(o => o.VariantKey).Select(g => g.First()))
         {
             var key = Truncate(offer.VariantKey, 200);
-            if (!taken.Add(key))
+            if (taken.Contains(key))
             {
                 continue;
             }
+
+            var currency = offer.Currency.Length == 3 ? offer.Currency : fallbackCurrency;
+            var usual = PriceSanityCheck.Median(known.Where(s => s.VariantKey == key && s.Currency == currency).Select(s => s.Price).ToList());
+            if (sanity.Reject(offer with { Currency = currency }, product.Title, usual) is not null)
+            {
+                rejected++;
+                continue;
+            }
+
+            taken.Add(key);
 
             db.PriceSnapshots.Add(new PriceSnapshot
             {
@@ -78,7 +91,7 @@ internal static class OutsideEvidenceWriter
                 ObservedOn = day,
                 Price = offer.Price,
                 ListPrice = offer.ListPrice,
-                Currency = offer.Currency.Length == 3 ? offer.Currency : fallbackCurrency,
+                Currency = currency,
                 InStock = offer.InStock,
                 CapturedAt = now,
                 Source = source,
@@ -87,7 +100,7 @@ internal static class OutsideEvidenceWriter
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        return added;
+        return (added, rejected);
     }
 
     public static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];

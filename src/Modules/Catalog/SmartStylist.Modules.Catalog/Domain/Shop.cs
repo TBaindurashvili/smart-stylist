@@ -36,4 +36,10 @@ public sealed class Shop
 
     /// <summary>Checkout tips learned from real orders, e.g. "no digits in the name field".</summary>
     public string? CheckoutNote { get; set; }
+
+    /// <summary>
+    /// Not a place to buy (e.g. it cancels forwarder orders): never collected, its sale emails are not priced and
+    /// its products are left off the deals page.
+    /// </summary>
+    public bool Dropped { get; set; }
 }

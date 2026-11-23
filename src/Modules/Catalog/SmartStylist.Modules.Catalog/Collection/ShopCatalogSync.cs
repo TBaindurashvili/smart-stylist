@@ -31,7 +31,8 @@ public sealed class ShopCatalogSync(CatalogDbContext db, IOptions<CatalogOptions
             shop.BaseUrl = config.BaseUrl;
             shop.Currency = config.Currency.ToUpperInvariant();
             shop.ConfiguredStrategy = config.Strategy;
-            shop.Enabled = config.Enabled;
+            shop.Enabled = config.Enabled && !config.Dropped;
+            shop.Dropped = config.Dropped;
             shop.AcceptsForwarder = config.AcceptsForwarder;
             shop.AcceptsForeignCard = config.AcceptsForeignCard;
             shop.CheckoutNote = config.CheckoutNote;

@@ -46,6 +46,7 @@ internal sealed class TestHost : IAsyncDisposable
             o.RequestDelayMs = 0;
             o.ArchiveDelayMs = 0;
             o.MaxProductsPerShop = 50;
+            o.PriceSanity.Floors = [new PriceFloorOptions { Category = "outerwear", Keywords = ["jacket", "coat"], Min = 20m }];
             o.Shops = [.. shops];
         });
         if (postgres is not null)

@@ -69,22 +69,35 @@ public static class CatalogModule
                 PooledConnectionLifetime = TimeSpan.FromMinutes(5),
             });
 
+        services.AddSingleton<EgressRouter>();
+        services.AddSingleton<PriceSanityCheck>();
         services.AddSingleton<BrowserPageFetcher>();
         services.AddSingleton<SitemapReader>();
         services.AddScoped<IShopCollector, ShopifyCollector>();
         services.AddScoped<IShopCollector, SitemapJsonLdCollector>();
         services.AddScoped<IShopCollector, BrowserJsonLdCollector>();
+        services.AddScoped<IShopCollector, UniqloApiCollector>();
         services.AddScoped(sp => new PriceCollectionService(
             sp.GetRequiredService<CatalogDbContext>(),
             sp.GetServices<IShopCollector>(),
             sp.GetRequiredService<IOptions<CatalogOptions>>(),
+            sp.GetRequiredService<PriceSanityCheck>(),
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PriceCollectionService>>()));
         services.AddScoped<ShopCatalogSync>();
         services.AddScoped(sp => new ProductPageProbe(sp.GetRequiredService<HttpPageFetcher>(), sp.GetRequiredService<BrowserPageFetcher>()));
         services.AddScoped(sp => new PageCaptureService(
             sp.GetRequiredService<CatalogDbContext>(),
+            sp.GetRequiredService<PriceSanityCheck>(),
             sp.GetRequiredService<TimeProvider>()));
+        services.AddScoped(sp => new BrowserWatchService(
+            sp.GetRequiredService<CatalogDbContext>(),
+            sp.GetRequiredService<BrowserPageFetcher>(),
+            sp.GetRequiredService<PageCaptureService>(),
+            sp.GetRequiredService<IOptions<CatalogOptions>>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<BrowserWatchService>>()));
+        services.AddScoped<BrowserWatchJob>();
         services.AddScoped<CollectPricesJob>();
         services.AddScoped<PlatformDetector>();
         services.AddScoped<DataQualityReport>();
@@ -120,10 +133,14 @@ public static class CatalogModule
         services.AddScoped(sp => new WaybackSeedService(
             sp.GetRequiredService<IHttpClientFactory>().CreateClient(WaybackSeedService.ClientName),
             sp.GetRequiredService<CatalogDbContext>(),
+            sp.GetRequiredService<PriceSanityCheck>(),
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<IOptions<CatalogOptions>>(),
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<WaybackSeedService>>()));
-        services.AddScoped(sp => new ManualPriceImport(sp.GetRequiredService<CatalogDbContext>(), sp.GetRequiredService<TimeProvider>()));
+        services.AddScoped(sp => new ManualPriceImport(
+            sp.GetRequiredService<CatalogDbContext>(),
+            sp.GetRequiredService<PriceSanityCheck>(),
+            sp.GetRequiredService<TimeProvider>()));
         return services;
     }
 }

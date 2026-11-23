@@ -52,5 +52,8 @@ public enum NewsletterStatus
     /// <summary>An order update or account email from a shop. Never sent to the model.</summary>
     Transactional,
 
+    /// <summary>From a shop dropped as a place to buy (e.g. it cancels forwarder orders). Never sent to the model.</summary>
+    ShopDropped,
+
     Failed,
 }

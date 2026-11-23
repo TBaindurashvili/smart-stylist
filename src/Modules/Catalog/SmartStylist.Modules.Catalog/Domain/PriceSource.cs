@@ -18,8 +18,11 @@ public enum PriceSource
     /// <summary>Outside evidence: an old copy of the product page in the Wayback Machine (archive.org).</summary>
     Archive,
 
-    /// <summary>Outside evidence: a dated price written down elsewhere (the stylist's notes), imported from a CSV file.</summary>
-    Manual,
+    /// <summary>
+    /// Outside evidence: a dated price written down elsewhere (the stylist's Recommended and near-miss tables),
+    /// imported from a CSV file or pasted Markdown tables. The least certain source: nobody re-checked the page.
+    /// </summary>
+    ManualHistory,
 }
 
 public static class PriceSourceExtensions
@@ -28,5 +31,16 @@ public static class PriceSourceExtensions
     /// Prices the app did not see itself on the shop. They help judge a sale before two weeks of own history exist,
     /// but a verdict that leans on them is marked as less certain.
     /// </summary>
-    public static bool IsOutsideEvidence(this PriceSource source) => source is PriceSource.Archive or PriceSource.Manual;
+    public static bool IsOutsideEvidence(this PriceSource source) => source is PriceSource.Archive or PriceSource.ManualHistory;
+
+    /// <summary>
+    /// How much a price from this source is trusted: the shop's own data 1, an archived copy of the shop's page 0.6,
+    /// a written-down price 0.4 (the page was never re-read).
+    /// </summary>
+    public static decimal Confidence(this PriceSource source) => source switch
+    {
+        PriceSource.Archive => 0.6m,
+        PriceSource.ManualHistory => 0.4m,
+        _ => 1m,
+    };
 }

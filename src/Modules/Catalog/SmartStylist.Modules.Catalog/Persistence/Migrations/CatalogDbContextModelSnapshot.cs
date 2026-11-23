@@ -45,6 +45,10 @@ namespace SmartStylist.Modules.Catalog.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("pages_failed");
 
+                    b.Property<int>("PricesRejected")
+                        .HasColumnType("integer")
+                        .HasColumnName("prices_rejected");
+
                     b.Property<int>("ProductsSeen")
                         .HasColumnType("integer")
                         .HasColumnName("products_seen");
@@ -350,6 +354,10 @@ namespace SmartStylist.Modules.Catalog.Persistence.Migrations
                         .HasColumnType("character varying(32)")
                         .HasColumnName("detected_strategy");
 
+                    b.Property<bool>("Dropped")
+                        .HasColumnType("boolean")
+                        .HasColumnName("dropped");
+
                     b.Property<bool>("Enabled")
                         .HasColumnType("boolean")
                         .HasColumnName("enabled");
@@ -388,6 +396,53 @@ namespace SmartStylist.Modules.Catalog.Persistence.Migrations
                         .HasDatabaseName("ix_shops_key");
 
                     b.ToTable("shops", "catalog");
+                });
+
+            modelBuilder.Entity("SmartStylist.Modules.Catalog.Domain.WatchedProduct", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("AddedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("added_at");
+
+                    b.Property<DateTimeOffset?>("LastCheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_checked_at");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("last_error");
+
+                    b.Property<int>("ShopId")
+                        .HasColumnType("integer")
+                        .HasColumnName("shop_id");
+
+                    b.Property<string>("Size")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("size");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("url");
+
+                    b.HasKey("Id")
+                        .HasName("pk_watched_products");
+
+                    b.HasIndex("ShopId", "Url")
+                        .IsUnique()
+                        .HasDatabaseName("ix_watched_products_shop_id_url");
+
+                    b.ToTable("watched_products", "catalog");
                 });
 
             modelBuilder.Entity("SmartStylist.Modules.Catalog.Domain.CollectionRun", b =>
@@ -433,6 +488,18 @@ namespace SmartStylist.Modules.Catalog.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_products_shops_shop_id");
+
+                    b.Navigation("Shop");
+                });
+
+            modelBuilder.Entity("SmartStylist.Modules.Catalog.Domain.WatchedProduct", b =>
+                {
+                    b.HasOne("SmartStylist.Modules.Catalog.Domain.Shop", "Shop")
+                        .WithMany()
+                        .HasForeignKey("ShopId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_watched_products_shops_shop_id");
 
                     b.Navigation("Shop");
                 });

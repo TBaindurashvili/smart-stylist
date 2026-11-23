@@ -15,6 +15,9 @@ using SmartStylist.Worker;
 //   dotnet run -- detect [shop ...]   -> find and save each shop's platform (Shopify, Salesforce, Magento, Next.js...)
 //   dotnet run -- awin-feeds           -> list the Awin product feeds and which programmes you joined
 //   dotnet run -- awin                 -> import today's prices from the Awin product feeds
+//   dotnet run -- wayback [core|shop ...|url ...] [--limit N]  -> seed price history from archive.org copies
+//   dotnet run -- import-prices <file.csv|file.md> [--date YYYY-MM-DD]  -> import written-down prices (Wardrobe doc tables)
+//   dotnet run -- watch add <url> [--size M] | remove <url> | list | run  -> the real-Chrome watch (J.Crew, lululemon)
 var command = CliCommand.Parse(args);
 
 var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings

@@ -11,9 +11,11 @@ using SmartStylist.Modules.Wardrobe.Persistence;
 
 namespace SmartStylist.Worker;
 
-internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, int? Limit, bool UseBrowser, string? Folder)
+internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, int? Limit, bool UseBrowser, string? Folder,
+    string? Date = null, string? Size = null)
 {
-    private static readonly string[] Commands = ["collect", "report", "migrate", "install-browser", "probe", "newsletters", "awin", "awin-feeds", "detect", "wayback", "import-prices"];
+    private static readonly string[] Commands =
+        ["collect", "report", "migrate", "install-browser", "probe", "newsletters", "awin", "awin-feeds", "detect", "wayback", "import-prices", "watch"];
 
     public static CliCommand? Parse(string[] args)
     {
@@ -26,11 +28,21 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
         int? limit = null;
         var useBrowser = false;
         string? folder = null;
+        string? date = null;
+        string? size = null;
         for (var i = 1; i < args.Length; i++)
         {
             if (args[i] is "--limit" && i + 1 < args.Length)
             {
                 limit = int.Parse(args[++i], CultureInfo.InvariantCulture);
+            }
+            else if (args[i] is "--date" && i + 1 < args.Length)
+            {
+                date = args[++i];
+            }
+            else if (args[i] is "--size" && i + 1 < args.Length)
+            {
+                size = args[++i];
             }
             else if (args[i] is "--folder" && i + 1 < args.Length)
             {
@@ -46,7 +58,7 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
             }
         }
 
-        return new CliCommand(args[0].ToLowerInvariant(), shops, limit, useBrowser, folder);
+        return new CliCommand(args[0].ToLowerInvariant(), shops, limit, useBrowser, folder, date, size);
     }
 
     public async Task<int> RunAsync(IServiceProvider services, CancellationToken cancellationToken)
@@ -66,7 +78,7 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
             return await ProbeAsync(provider.GetRequiredService<ProductPageProbe>(), cancellationToken);
         }
 
-        if (Name is "migrate" or "collect" or "newsletters" or "awin" or "detect" or "wayback" or "import-prices")
+        if (Name is "migrate" or "collect" or "newsletters" or "awin" or "detect" or "wayback" or "import-prices" or "watch")
         {
             await provider.GetRequiredService<CatalogDbContext>().Database.MigrateAsync(cancellationToken);
             await provider.GetRequiredService<WardrobeDbContext>().Database.MigrateAsync(cancellationToken);
@@ -110,6 +122,11 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
         if (Name == "import-prices")
         {
             await ImportPricesAsync(provider.GetRequiredService<ManualPriceImport>(), runLog, cancellationToken);
+        }
+
+        if (Name == "watch")
+        {
+            await WatchAsync(provider.GetRequiredService<BrowserWatchService>(), runLog, cancellationToken);
         }
 
         if (Name is "awin" or "awin-feeds")
@@ -191,21 +208,29 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
     }
 
     /// <summary>
-    /// Seeds price history from archive.org copies. Arguments are shop keys (their products with under two weeks of
-    /// prices) or product page addresses. --limit caps the products (default 20); 12 copies are read per product.
+    /// Seeds price history from archive.org copies. Arguments are "core" (the long-running products in
+    /// Catalog:CoreProducts), shop keys (their products with under two weeks of prices) or product page addresses.
+    /// With no arguments the core products go first, then every shop. --limit caps the shop products (default 20);
+    /// 12 copies are read per product.
     /// </summary>
     private async Task WaybackAsync(WaybackSeedService wayback, RunLogFile runLog, CancellationToken cancellationToken)
     {
         const int copies = 12;
         var urls = ShopKeys.Where(k => k.StartsWith("http", StringComparison.OrdinalIgnoreCase)).ToList();
-        var shops = ShopKeys.Except(urls).ToList();
+        var core = ShopKeys.Count == 0 || ShopKeys.Contains("core", StringComparer.OrdinalIgnoreCase);
+        var shops = ShopKeys.Except(urls).Where(k => !string.Equals(k, "core", StringComparison.OrdinalIgnoreCase)).ToList();
         var results = new List<WaybackSeedResult>();
+        if (core)
+        {
+            results.Add(await wayback.SeedCoreAsync(copies, cancellationToken));
+        }
+
         foreach (var url in urls)
         {
             results.Add(await wayback.SeedUrlAsync(new Uri(url), null, copies, cancellationToken));
         }
 
-        if (shops.Count > 0 || urls.Count == 0)
+        if (shops.Count > 0 || ShopKeys.Count == 0)
         {
             results.Add(await wayback.SeedShopsAsync(shops, Limit ?? 20, copies, cancellationToken));
         }
@@ -222,20 +247,37 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
         runLog.WriteLine(summary);
     }
 
-    /// <summary>Imports a CSV of dated prices (date, url, price, optional title, shop, currency, list_price, size, colour).</summary>
+    /// <summary>
+    /// Imports dated prices written down elsewhere: a CSV, or the Wardrobe doc's Recommended and Near-misses tables
+    /// pasted into a .md file as they are. --date gives the day for rows without one.
+    /// </summary>
     private async Task ImportPricesAsync(ManualPriceImport import, RunLogFile runLog, CancellationToken cancellationToken)
     {
         if (ShopKeys.Count == 0 || !File.Exists(ShopKeys[0]))
         {
-            Console.WriteLine("Usage: import-prices <file.csv>   (columns: date, url, price; optional title, shop, currency, list_price, size, colour)");
+            Console.WriteLine("Usage: import-prices <file.csv|file.md> [--date 2026-11-20]");
+            Console.WriteLine("  Columns by name: date, price (\"~~$98~~ $54\" also gives the was price), url or a link in any cell,");
+            Console.WriteLine("  and optional title/item, shop, currency, was/list_price, size, colour. Saved as ManualHistory (least certain).");
             return;
+        }
+
+        DateOnly? defaultDate = null;
+        if (Date is not null)
+        {
+            if (!DateOnly.TryParseExact(Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
+            {
+                Console.WriteLine($"--date '{Date}' not understood: use 2026-11-20.");
+                return;
+            }
+
+            defaultDate = parsed;
         }
 
         using var reader = File.OpenText(ShopKeys[0]);
         ManualImportResult result;
         try
         {
-            result = await import.ImportAsync(reader, cancellationToken);
+            result = await import.ImportAsync(reader, cancellationToken, defaultDate);
         }
         catch (FormatException ex)
         {
@@ -252,6 +294,47 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
         var summary = $"{result.Rows} rows read, {result.PricesAdded} prices added as outside evidence, {result.Skipped.Count} skipped.";
         Console.WriteLine(summary);
         runLog.WriteLine(summary);
+    }
+
+    /// <summary>
+    /// The real-Chrome watch for shops that only load in a browser (BrowserWatch in Catalog:Shops):
+    /// watch add &lt;url&gt; [--size M] | watch remove &lt;url&gt; | watch list | watch run.
+    /// </summary>
+    private async Task WatchAsync(BrowserWatchService watch, RunLogFile runLog, CancellationToken cancellationToken)
+    {
+        var action = ShopKeys.FirstOrDefault()?.ToLowerInvariant();
+        var url = ShopKeys.Skip(1).FirstOrDefault() is { } raw && Uri.TryCreate(raw, UriKind.Absolute, out var parsed) ? parsed : null;
+        switch (action)
+        {
+            case "add" when url is not null:
+                Console.WriteLine(await watch.AddAsync(url, Size, cancellationToken));
+                break;
+            case "remove" when url is not null:
+                Console.WriteLine(await watch.RemoveAsync(url, cancellationToken) ? $"No longer watching {url}." : $"{url} was not watched.");
+                break;
+            case "list":
+                foreach (var w in await watch.ListAsync(cancellationToken))
+                {
+                    Console.WriteLine($"{w.Shop.Key,-14} {w.Size ?? "-",-6} {w.LastCheckedAt?.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) ?? "never",-16} {w.Url}" +
+                                      (w.LastError is null ? "" : $"  ({w.LastError})"));
+                }
+
+                break;
+            case "run":
+                var visits = await watch.RunAsync(cancellationToken);
+                foreach (var visit in visits)
+                {
+                    var line = $"{visit.Shop,-14} {visit.Outcome}  {visit.Url}";
+                    Console.WriteLine(line);
+                    runLog.WriteLine(line);
+                }
+
+                Console.WriteLine(visits.Count == 0 ? "Nothing due: every watched page was visited recently." : $"{visits.Count} pages visited.");
+                break;
+            default:
+                Console.WriteLine("Usage: watch add <url> [--size M] | watch remove <url> | watch list | watch run");
+                break;
+        }
     }
 
     private async Task AwinAsync(AwinFeedImportService awin, RunLogFile runLog, CancellationToken cancellationToken)

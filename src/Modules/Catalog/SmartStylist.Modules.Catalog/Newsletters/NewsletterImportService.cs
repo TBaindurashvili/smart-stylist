@@ -83,6 +83,10 @@ public sealed partial class NewsletterImportService
                 {
                     email.Status = NewsletterStatus.UnknownSender;
                 }
+                else if (match.Shop.Dropped)
+                {
+                    email.Status = NewsletterStatus.ShopDropped;
+                }
                 else if (message.IsTransactional)
                 {
                     email.Status = NewsletterStatus.Transactional;

@@ -17,6 +17,8 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
 
     public DbSet<NewsletterEmail> NewsletterEmails => Set<NewsletterEmail>();
 
+    public DbSet<WatchedProduct> WatchedProducts => Set<WatchedProduct>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema(Schema);
@@ -80,6 +82,15 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             email.Property(e => e.PromoCode).HasMaxLength(100);
             email.Property(e => e.Error).HasMaxLength(4000);
             email.HasOne(e => e.Shop).WithMany().OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<WatchedProduct>(watched =>
+        {
+            watched.HasIndex(w => new { w.ShopId, w.Url }).IsUnique();
+            watched.Property(w => w.Url).HasMaxLength(2000);
+            watched.Property(w => w.Size).HasMaxLength(100);
+            watched.Property(w => w.LastError).HasMaxLength(1000);
+            watched.HasOne(w => w.Shop).WithMany().OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

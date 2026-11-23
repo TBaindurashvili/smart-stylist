@@ -13,6 +13,9 @@ public enum PageCaptureStatus
     Saved,
     UnknownShop,
     NoPrice,
+
+    /// <summary>The page had prices, but the sanity check refused all of them (e.g. a sold-out placeholder).</summary>
+    Refused,
 }
 
 public sealed record CapturedSize(string Label, decimal Price, bool? InStock);
@@ -38,15 +41,21 @@ public sealed class PageCaptureService
     private const int MaxUrl = 2000;
 
     private readonly CatalogDbContext _db;
+    private readonly PriceSanityCheck _sanity;
     private readonly TimeProvider _time;
 
-    internal PageCaptureService(CatalogDbContext db, TimeProvider time)
+    internal PageCaptureService(CatalogDbContext db, PriceSanityCheck sanity, TimeProvider time)
     {
         _db = db;
+        _sanity = sanity;
         _time = time;
     }
 
-    public async Task<PageCaptureResult> CaptureAsync(PageCapture capture, CancellationToken cancellationToken)
+    public Task<PageCaptureResult> CaptureAsync(PageCapture capture, CancellationToken cancellationToken) =>
+        CaptureAsync(capture, PriceSource.Extension, cancellationToken);
+
+    /// <param name="source">Extension for pages the user opened; Crawl for the browser watch, which reads the same page itself.</param>
+    internal async Task<PageCaptureResult> CaptureAsync(PageCapture capture, PriceSource source, CancellationToken cancellationToken)
     {
         if (!Uri.TryCreate(capture.Url, UriKind.Absolute, out var url) || url.Scheme is not ("http" or "https"))
         {
@@ -66,7 +75,13 @@ public sealed class PageCaptureService
             return new PageCaptureResult(PageCaptureStatus.NoPrice, shop.Name);
         }
 
-        var product = await SaveAsync(shop, scraped, cancellationToken);
+        scraped = await WithoutRefusedAsync(shop, scraped, cancellationToken);
+        if (scraped.Offers.Count == 0)
+        {
+            return new PageCaptureResult(PageCaptureStatus.Refused, shop.Name, scraped.Title);
+        }
+
+        var product = await SaveAsync(shop, scraped, source, cancellationToken);
 
         var cheapest = scraped.Offers.MinBy(o => o.Price)!;
         var daily = await _db.PriceSnapshots
@@ -87,7 +102,22 @@ public sealed class PageCaptureService
             scraped.Offers.Where(o => o.SizeLabel is not null).Select(o => new CapturedSize(o.SizeLabel!, o.Price, o.InStock)).ToList());
     }
 
-    private async Task<Product> SaveAsync(Shop shop, ScrapedProduct scraped, CancellationToken cancellationToken)
+    /// <summary>The offers that pass the sanity check, against the history of the product the page belongs to.</summary>
+    private async Task<ScrapedProduct> WithoutRefusedAsync(Shop shop, ScrapedProduct scraped, CancellationToken cancellationToken)
+    {
+        var history = await _db.PriceSnapshots
+            .Where(s => s.Product.ShopId == shop.Id && (s.Product.ExternalId == scraped.ExternalId || s.Product.Url == scraped.Url))
+            .Select(s => new { s.VariantKey, s.Currency, s.Price })
+            .ToListAsync(cancellationToken);
+
+        var kept = scraped.Offers
+            .Where(o => _sanity.Reject(o, scraped.Title,
+                PriceSanityCheck.Median(history.Where(h => h.VariantKey == o.VariantKey && h.Currency == o.Currency).Select(h => h.Price).ToList())) is null)
+            .ToList();
+        return scraped with { Offers = kept };
+    }
+
+    private async Task<Product> SaveAsync(Shop shop, ScrapedProduct scraped, PriceSource source, CancellationToken cancellationToken)
     {
         var now = _time.GetUtcNow();
         var today = DateOnly.FromDateTime(now.UtcDateTime);
@@ -128,7 +158,7 @@ public sealed class PageCaptureService
             snapshot.Currency = offer.Currency.Length == 3 ? offer.Currency : shop.Currency;
             snapshot.InStock = offer.InStock;
             snapshot.CapturedAt = now;
-            snapshot.Source = PriceSource.Extension;
+            snapshot.Source = source;
         }
 
         await _db.SaveChangesAsync(cancellationToken);

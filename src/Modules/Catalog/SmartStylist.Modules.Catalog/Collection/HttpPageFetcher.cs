@@ -2,7 +2,11 @@ using System.Net;
 
 namespace SmartStylist.Modules.Catalog.Collection;
 
-internal sealed class HttpPageFetcher(HttpClient httpClient) : IPageFetcher
+/// <summary>
+/// Plain HTTP requests to shops. A shop with an Egress goes out through it (a US proxy); a page that redirects to the
+/// shop's site for another country is retried once through Catalog:GeoRetryEgress, or reported as geo-blocked.
+/// </summary>
+internal sealed class HttpPageFetcher(HttpClient httpClient, EgressRouter egress) : IPageFetcher
 {
     public const string ClientName = "catalog";
 
@@ -23,14 +27,23 @@ internal sealed class HttpPageFetcher(HttpClient httpClient) : IPageFetcher
 
     private async Task<HttpResponseMessage> SendAsync(Uri url, CancellationToken cancellationToken)
     {
-        var response = await httpClient.GetAsync(url, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        var route = egress.EgressFor(url);
+        var response = await SendViaAsync(route, url, cancellationToken);
+        if (response.IsSuccessStatusCode && GeoRedirect.Detect(url, response.RequestMessage?.RequestUri) is { } landed)
         {
-            // Honour the shop's rate limit once; a second 429 means it does not want us right now.
-            var wait = RetryAfter(response) ?? TimeSpan.FromSeconds(10);
             response.Dispose();
-            await Task.Delay(wait < MaxRetryAfter ? wait : MaxRetryAfter, cancellationToken);
-            response = await httpClient.GetAsync(url, cancellationToken);
+            if (route is not null || egress.GeoRetryEgress is not { } retry)
+            {
+                throw new GeoRedirectedException(url, landed);
+            }
+
+            route = retry;
+            response = await SendViaAsync(route, url, cancellationToken);
+            if (response.IsSuccessStatusCode && GeoRedirect.Detect(url, response.RequestMessage?.RequestUri) is { } again)
+            {
+                response.Dispose();
+                throw new GeoRedirectedException(url, again);
+            }
         }
 
         if (response.IsSuccessStatusCode)
@@ -51,6 +64,24 @@ internal sealed class HttpPageFetcher(HttpClient httpClient) : IPageFetcher
             return response;
         }
     }
+
+    private async Task<HttpResponseMessage> SendViaAsync(string? route, Uri url, CancellationToken cancellationToken)
+    {
+        var response = await GetAsync(route, url, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        {
+            // Honour the shop's rate limit once; a second 429 means it does not want us right now.
+            var wait = RetryAfter(response) ?? TimeSpan.FromSeconds(10);
+            response.Dispose();
+            await Task.Delay(wait < MaxRetryAfter ? wait : MaxRetryAfter, cancellationToken);
+            response = await GetAsync(route, url, cancellationToken);
+        }
+
+        return response;
+    }
+
+    private Task<HttpResponseMessage> GetAsync(string? route, Uri url, CancellationToken cancellationToken) =>
+        route is null ? httpClient.GetAsync(url, cancellationToken) : egress.GetAsync(route, url, cancellationToken);
 
     private static Dictionary<string, string> Headers(HttpResponseMessage response) =>
         response.Headers.Concat(response.Content.Headers)

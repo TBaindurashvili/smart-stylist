@@ -107,7 +107,9 @@ internal sealed class BrowserPageFetcher(IOptions<CatalogOptions> options, ILogg
             {
                 // A real browser window with its own lasting profile. The shop's own user agent and fingerprint are
                 // left as the browser reports them; faking them is the "aggressive evasion" we stay away from.
-                var profile = Path.GetFullPath(browserOptions.UserDataDir!);
+                var profile = browserOptions.UserDataDir!.StartsWith('~')
+                    ? Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), browserOptions.UserDataDir[1..].TrimStart('/', '\\'))
+                    : Path.GetFullPath(browserOptions.UserDataDir!);
                 Directory.CreateDirectory(profile);
                 logger.LogInformation("Starting {Browser} with profile {Profile} (headless: {Headless})", channel ?? "Chromium", profile, browserOptions.Headless);
                 _context = await Launch(() => _playwright.Chromium.LaunchPersistentContextAsync(profile, new BrowserTypeLaunchPersistentContextOptions

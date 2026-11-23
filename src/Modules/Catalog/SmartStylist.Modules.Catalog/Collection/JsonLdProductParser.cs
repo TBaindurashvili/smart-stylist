@@ -160,6 +160,12 @@ internal static class JsonLdProductParser
         {
             foreach (var variant in AsArray(variants))
             {
+                if (variant.ValueKind != JsonValueKind.Object)
+                {
+                    // Some shops list variants as bare ids or URLs.
+                    continue;
+                }
+
                 var variantKey = Text(variant, "sku") ?? Text(variant, "productID") ?? Text(variant, "@id");
                 var size = SizeText(variant);
                 if (variant.TryGetProperty("offers", out var variantOffers))
@@ -328,7 +334,7 @@ internal static class JsonLdProductParser
     }
 
     private static string? SizeText(JsonElement node) =>
-        node.TryGetProperty("size", out var size) ? NameOf(size) : null;
+        node.ValueKind == JsonValueKind.Object && node.TryGetProperty("size", out var size) ? NameOf(size) : null;
 
     private static bool HasType(JsonElement node, string type)
     {

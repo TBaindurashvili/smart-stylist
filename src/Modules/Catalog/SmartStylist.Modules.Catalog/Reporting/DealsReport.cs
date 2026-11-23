@@ -25,7 +25,8 @@ public enum DealVerdict
 
 /// <summary>One earlier day of a product: its lowest price that day and whether the shop showed a "was" price.</summary>
 /// <param name="Outside">Outside evidence (an archived page or a written-down price), not a price the app saw itself.</param>
-public sealed record PricePoint(DateOnly Day, decimal Price, bool OnSale, bool Outside = false);
+/// <param name="Confidence">How much the day's source is trusted (<see cref="PriceSourceExtensions.Confidence"/>).</param>
+public sealed record PricePoint(DateOnly Day, decimal Price, bool OnSale, bool Outside = false, decimal Confidence = 1m);
 
 /// <summary>A price judged against the product's own history.</summary>
 /// <param name="ClaimedDiscount">What the shop's crossed-out price says, 0.3 = 30% off.</param>
@@ -70,9 +71,12 @@ public sealed class DealsReport(CatalogDbContext db, TimeProvider time)
 
     /// <summary>
     /// Outside evidence is enough for a first, less certain verdict when it gives at least this many earlier days
-    /// spread over at least <see cref="MinOutsideSpanDays"/> days.
+    /// spread over at least <see cref="MinOutsideSpanDays"/> days. Days are weighted by their source's confidence,
+    /// so written-down prices need more days than archived pages: 3 archived days, or 5 days of notes.
     /// </summary>
     public const int MinOutsideDays = 3;
+
+    private static readonly decimal MinOutsideWeight = MinOutsideDays * PriceSource.Archive.Confidence();
 
     public const int MinOutsideSpanDays = 21;
 
@@ -91,8 +95,9 @@ public sealed class DealsReport(CatalogDbContext db, TimeProvider time)
         var ownDays = earlier.Count(p => !p.Outside);
         var outsideDays = earlier.Count - ownDays;
         var span = earlier.Count == 0 ? 0 : earlier.Max(p => p.Day).DayNumber - earlier.Min(p => p.Day).DayNumber;
+        var outsideWeight = earlier.Where(p => p.Outside).Sum(p => p.Confidence);
         var lowConfidence = ownDays < MinHistoryDays;
-        if (lowConfidence && (outsideDays == 0 || earlier.Count < MinOutsideDays || span < MinOutsideSpanDays))
+        if (lowConfidence && (outsideDays == 0 || earlier.Count < MinOutsideDays || span < MinOutsideSpanDays || ownDays + outsideWeight < MinOutsideWeight))
         {
             return new DealAssessment(DealVerdict.StillLearning,
                 $"Only {days} day(s) of prices so far, so it's too early to say whether this sale is real.",
@@ -148,7 +153,7 @@ public sealed class DealsReport(CatalogDbContext db, TimeProvider time)
         var historyFrom = today.AddDays(-HistoryDays);
 
         var products = await db.Products.AsNoTracking()
-            .Where(p => p.Snapshots.Any(s => s.ObservedOn >= recentFrom))
+            .Where(p => !p.Shop.Dropped && p.Snapshots.Any(s => s.ObservedOn >= recentFrom))
             .Select(p => new
             {
                 p.Id, ShopName = p.Shop.Name, p.Title, p.Brand, p.Url, p.ImageUrl,
@@ -168,7 +173,7 @@ public sealed class DealsReport(CatalogDbContext db, TimeProvider time)
                 .Where(s => s.ObservedOn < lastDay && s.Currency == latest.Currency)
                 .GroupBy(s => s.ObservedOn)
                 .Select(g => g.MinBy(s => s.Price)!)
-                .Select(s => new PricePoint(s.ObservedOn, s.Price, s.ListPrice > s.Price, s.Source.IsOutsideEvidence()))
+                .Select(s => new PricePoint(s.ObservedOn, s.Price, s.ListPrice > s.Price, s.Source.IsOutsideEvidence(), s.Source.Confidence()))
                 .ToList();
 
             var assessment = Assess(earlier, latest.Price, latest.ListPrice, latest.Currency);

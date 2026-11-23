@@ -9,12 +9,17 @@ namespace SmartStylist.Modules.Catalog.Collection;
 /// <summary>Runs one shop's daily collection and stores products, prices and a run record.</summary>
 public sealed class PriceCollectionService
 {
-    private static readonly CollectorStrategy[] AutoOrder =
-        [CollectorStrategy.Shopify, CollectorStrategy.SitemapJsonLd, CollectorStrategy.BrowserJsonLd];
+    // The browser is not in the automatic order: a crawl in Chrome is set per shop (Strategy), and blocked shops
+    // get their watched pages visited a few times a day instead (BrowserWatchService).
+    private static readonly CollectorStrategy[] AutoOrder = [CollectorStrategy.Shopify, CollectorStrategy.SitemapJsonLd];
+
+    /// <summary>Earlier days a SKU's usual price is taken from, for the sanity check.</summary>
+    private const int UsualPriceDays = 90;
 
     private readonly CatalogDbContext _db;
     private readonly IReadOnlyDictionary<CollectorStrategy, IShopCollector> _collectors;
     private readonly IOptions<CatalogOptions> _options;
+    private readonly PriceSanityCheck _sanity;
     private readonly TimeProvider _time;
     private readonly ILogger<PriceCollectionService> _logger;
 
@@ -22,12 +27,14 @@ public sealed class PriceCollectionService
         CatalogDbContext db,
         IEnumerable<IShopCollector> collectors,
         IOptions<CatalogOptions> options,
+        PriceSanityCheck sanity,
         TimeProvider time,
         ILogger<PriceCollectionService> logger)
     {
         _db = db;
         _collectors = collectors.ToDictionary(c => c.Strategy);
         _options = options;
+        _sanity = sanity;
         _time = time;
         _logger = logger;
     }
@@ -39,6 +46,15 @@ public sealed class PriceCollectionService
 
         var run = new CollectionRun { Shop = shop, StartedAt = _time.GetUtcNow() };
         _db.CollectionRuns.Add(run);
+        if (shop.Dropped)
+        {
+            run.Status = RunStatus.Failed;
+            run.Error = "Dropped from collection (Catalog:Shops Dropped = true).";
+            run.FinishedAt = run.StartedAt;
+            await _db.SaveChangesAsync(cancellationToken);
+            return run;
+        }
+
         await _db.SaveChangesAsync(cancellationToken);
 
         var shopOptions = _options.Value.Shops.FirstOrDefault(s => s.Key == shopKey);
@@ -51,6 +67,9 @@ public sealed class PriceCollectionService
             .Select(p => p.Url)
             .Take(limit)
             .ToListAsync(cancellationToken);
+        // The long-running core products are priced every day, whether or not the sitemap lists them first.
+        knownUrls = _options.Value.CoreProducts.Where(c => c.Shop == shopKey).Select(c => c.Url)
+            .Concat(knownUrls).Distinct(StringComparer.OrdinalIgnoreCase).Take(limit).ToList();
 
         var baseUrl = new Uri(shop.BaseUrl);
         var request = new ShopRequest(
@@ -129,8 +148,8 @@ public sealed class PriceCollectionService
         }
 
         _logger.LogInformation(
-            "{Shop}: {Status} via {Strategy}, {Products} products, {Snapshots} prices, {Failed} failed pages",
-            shop.Key, run.Status, run.Strategy, run.ProductsSeen, run.SnapshotsWritten, run.PagesFailed);
+            "{Shop}: {Status} via {Strategy}, {Products} products, {Snapshots} prices, {Rejected} refused, {Failed} failed pages",
+            shop.Key, run.Status, run.Strategy, run.ProductsSeen, run.SnapshotsWritten, run.PricesRejected, run.PagesFailed);
         return run;
     }
 
@@ -161,6 +180,13 @@ public sealed class PriceCollectionService
         var todaysSnapshots = await _db.PriceSnapshots
             .Where(s => s.ObservedOn == today && existingIds.Contains(s.ProductId))
             .ToDictionaryAsync(s => (s.ProductId, s.VariantKey), cancellationToken);
+        var usualFrom = today.AddDays(-UsualPriceDays);
+        var usualPrices = (await _db.PriceSnapshots
+                .Where(s => s.ObservedOn < today && s.ObservedOn >= usualFrom && existingIds.Contains(s.ProductId))
+                .Select(s => new { s.ProductId, s.VariantKey, s.Currency, s.Price })
+                .ToListAsync(cancellationToken))
+            .GroupBy(s => (s.ProductId, s.VariantKey, s.Currency))
+            .ToDictionary(g => g.Key, g => PriceSanityCheck.Median(g.Select(s => s.Price).ToList()));
 
         foreach (var item in unique)
         {
@@ -178,7 +204,10 @@ public sealed class PriceCollectionService
             }
 
             product.Url = Truncate(item.Url, 2000);
-            product.Title = Truncate(item.Title, 500);
+            // An API that gives prices but no name (Uniqlo's) keeps the title the product already has.
+            product.Title = string.IsNullOrWhiteSpace(item.Title)
+                ? string.IsNullOrWhiteSpace(product.Title) ? Truncate(item.ExternalId, 500) : product.Title
+                : Truncate(item.Title, 500);
             product.Brand = item.Brand is null ? null : Truncate(item.Brand, 200);
             product.ImageUrl = item.ImageUrl is null || item.ImageUrl.Length > 2000 ? null : item.ImageUrl;
             product.LastSeenAt = now;
@@ -186,6 +215,18 @@ public sealed class PriceCollectionService
             foreach (var offer in item.Offers.GroupBy(o => o.VariantKey).Select(g => g.First()))
             {
                 var variantKey = Truncate(offer.VariantKey, 200);
+                var currency = offer.Currency.Length == 3 ? offer.Currency : shop.Currency;
+                var usual = product.Id == 0 ? null : usualPrices.GetValueOrDefault((product.Id, variantKey, currency));
+                if (_sanity.Reject(offer with { Currency = currency }, item.Title, usual) is { } reason)
+                {
+                    if (run.PricesRejected++ < 5)
+                    {
+                        _logger.LogWarning("{Shop}: refused {Url} {Variant}: {Reason}", shop.Key, item.Url, variantKey, reason);
+                    }
+
+                    continue;
+                }
+
                 if (product.Id == 0 || !todaysSnapshots.TryGetValue((product.Id, variantKey), out var snapshot))
                 {
                     snapshot = new PriceSnapshot { Product = product, VariantKey = variantKey, Currency = offer.Currency, ObservedOn = today };
@@ -196,7 +237,7 @@ public sealed class PriceCollectionService
                 snapshot.Colour = offer.Colour is null ? null : Truncate(offer.Colour, 100);
                 snapshot.Price = offer.Price;
                 snapshot.ListPrice = offer.ListPrice;
-                snapshot.Currency = offer.Currency.Length == 3 ? offer.Currency : shop.Currency;
+                snapshot.Currency = currency;
                 snapshot.InStock = offer.InStock;
                 snapshot.CapturedAt = now;
                 run.SnapshotsWritten++;

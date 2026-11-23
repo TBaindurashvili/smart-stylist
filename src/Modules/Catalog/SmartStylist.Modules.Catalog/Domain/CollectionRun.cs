@@ -23,6 +23,9 @@ public sealed class CollectionRun
     /// <summary>Pages or feed requests that failed or had no usable price.</summary>
     public int PagesFailed { get; set; }
 
+    /// <summary>Prices the sanity check refused, e.g. a $1.90 placeholder on a sold-out page.</summary>
+    public int PricesRejected { get; set; }
+
     public string? Error { get; set; }
 }
 

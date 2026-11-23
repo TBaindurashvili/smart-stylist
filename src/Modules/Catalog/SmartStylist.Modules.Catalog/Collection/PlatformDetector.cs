@@ -14,12 +14,18 @@ public sealed record PlatformDetection(ShopPlatform Platform, string Evidence);
 /// Recognises a shop's platform from its home page, headers and cookies, plus a check of /products.json
 /// for Shopify, which is the cleanest source when it answers.
 /// </summary>
-public sealed class PlatformDetector(IHttpClientFactory httpClients)
+public sealed class PlatformDetector(IHttpClientFactory httpClients, EgressRouter egress)
 {
     public async Task<PlatformDetection> DetectAsync(Uri shopRoot, CancellationToken cancellationToken)
     {
         var http = httpClients.CreateClient(HttpPageFetcher.ClientName);
-        using var response = await http.GetAsync(shopRoot, cancellationToken);
+        var route = egress.EgressFor(shopRoot);
+        using var response = route is null ? await http.GetAsync(shopRoot, cancellationToken) : await egress.GetAsync(route, shopRoot, cancellationToken);
+        if (GeoRedirect.Detect(shopRoot, response.RequestMessage?.RequestUri) is { } landed)
+        {
+            return new PlatformDetection(ShopPlatform.Unknown, $"redirected to {landed.Host}{landed.AbsolutePath}: blocked by geography, needs a US egress");
+        }
+
         var headers = response.Headers.Concat(response.Content.Headers)
             .GroupBy(h => h.Key, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key.ToLowerInvariant(), g => string.Join(", ", g.SelectMany(h => h.Value)));
@@ -39,7 +45,7 @@ public sealed class PlatformDetector(IHttpClientFactory httpClients)
         }
 
         var detection = Detect(new PlatformProbe(html, headers, cookies));
-        if (detection.Platform is ShopPlatform.Unknown or ShopPlatform.Shopify && await HasShopifyFeedAsync(http, shopRoot, cancellationToken))
+        if (route is null && detection.Platform is ShopPlatform.Unknown or ShopPlatform.Shopify && await HasShopifyFeedAsync(http, shopRoot, cancellationToken))
         {
             return new PlatformDetection(ShopPlatform.Shopify, "/products.json answers");
         }

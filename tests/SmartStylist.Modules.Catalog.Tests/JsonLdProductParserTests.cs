@@ -7,6 +7,21 @@ public class JsonLdProductParserTests
     private static readonly Uri PageUrl = new("https://shop.example.com/p/oxford-shirt?color=white");
 
     [Fact]
+    public void Variants_given_as_bare_addresses_are_skipped_not_fatal()
+    {
+        const string html = """
+            <script type="application/ld+json">
+            {"@type":"ProductGroup","name":"541 Athletic Taper Jeans","hasVariant":["https://www.levi.com/p/1",
+              {"@type":"Product","sku":"181810692-32","size":"32x32","offers":{"@type":"Offer","price":"69.50","priceCurrency":"USD"}}]}
+            </script>
+            """;
+
+        var product = JsonLdProductParser.Parse(html, PageUrl, "USD");
+
+        Assert.Equal(69.50m, Assert.Single(product!.Offers).Price);
+    }
+
+    [Fact]
     public void Reads_product_with_offer_per_size_and_strikethrough_price()
     {
         var product = JsonLdProductParser.Parse(FixtureFile.Read("jsonld-product.html"), PageUrl, "USD");

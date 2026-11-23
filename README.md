@@ -56,7 +56,48 @@ Each shop is tried with the cheapest source first, and the one that works is rem
 1. **Shopify**: the public `/products.json` feed. Every product and size, with the "compare at" price. Cleanest data.
 2. **SitemapJsonLd**: product URLs from `robots.txt` → sitemaps, then the schema.org JSON-LD (or Open Graph
    price tags) on each product page, over plain HTTP. Most big shops publish this for Google Shopping.
-3. **BrowserJsonLd**: the same, but pages are opened in headless Chromium, for shops that block plain HTTP clients.
+3. **BrowserJsonLd**: the same, but pages are opened in a browser. Not tried automatically any more: set
+   `"Strategy": "BrowserJsonLd"` on a shop to use it. Blocked shops get the browser watch below instead.
+4. **UniqloApi** (set per shop): Uniqlo's own commerce API (`.../products/<code>/price-groups/00/l2s` and
+   `/details`), every colour and size with base and promo price and stock. The page's JSON-LD shows a $1.90-$3.90
+   placeholder on sold-out items, so the page is not used.
+
+Every price from every source passes a **sanity check** before it is saved (`Catalog:PriceSanity`): it is refused
+when it is under 15% of the SKU's usual (median) price or of its own crossed-out price, or under the floor for
+its category (tees $5, outerwear $20, footwear $15..., matched on title words; floors apply to USD prices).
+`collect` prints how many were refused and why.
+
+### Geo-blocked shops and the US egress
+
+Kohl's, Levi's and brooksbrothers.com load from a US address but block (Akamai 403) or redirect (to
+brooksbrothers.eu) visitors from Georgia. That is geography, not a bot check. Their shops name an egress
+(`"Egress": "us"`), and their plain HTTP requests (collect, probe, detect, sitemaps) go out through it, at most
+one request per `MinIntervalMs` (5 s) across those shops. No other shop uses it. Any other shop that redirects to
+its country site is retried once through `Catalog:GeoRetryEgress`, or reported as "blocked by geography".
+
+Point the egress at an HTTP or SOCKS proxy in the US. A small US VPS works with an SSH tunnel:
+
+```bash
+ssh -N -D 1080 me@my-us-vps &
+dotnet user-secrets set "Catalog:Egresses:us:ProxyUrl" "socks5://127.0.0.1:1080" --project src/SmartStylist.Worker
+```
+
+Until a ProxyUrl is set, those shops are not scheduled and `collect` says which setting is missing.
+
+### The browser watch (J.Crew, lululemon)
+
+Shops with `"BrowserWatch": true` load in Chrome but not over plain HTTP. They are never crawled; only the
+product pages you watch are visited, in the visible Chrome window (`Catalog:Browser`), at most once per 4 hours
+and on `Catalog:BrowserWatch:Cron` (7:00, 13:00, 19:00 UTC). A bot check stops the shop for that run.
+
+```bash
+dotnet run --project src/SmartStylist.Worker -- watch add "https://www.jcrew.com/p/BE996" --size L
+dotnet run --project src/SmartStylist.Worker -- watch list
+dotnet run --project src/SmartStylist.Worker -- watch run     # visit what is due now
+```
+
+Under Armour is `"Dropped": true` (it cancels forwarder orders): no collection, its emails are not priced and its
+products are left off /deals. adidas is never crawled; its prices come from emails, feeds and the extension.
 
 ### Blocked shops and a real Chrome window
 
@@ -148,21 +189,33 @@ A new shop has to be added both to `Catalog:Shops` and to `matches` in `extensio
 ## Outside evidence: history before two weeks
 
 A verdict normally needs 14 days of the app's own prices. To judge sales sooner (before Black Friday), seed
-history from prices the app did not see itself. They are stored with source `Archive` or `Manual`, never
+history from prices the app did not see itself. They are stored with source `Archive` or `ManualHistory`, never
 overwrite a price the app saw on the same day, and a verdict that leans on them says "Less certain" and shows
-a "less certain" tag on /deals. Outside evidence counts once it gives 3+ earlier days spread over 21+ days.
+a "less certain" tag on /deals. Outside evidence counts once it gives earlier days spread over 21+ days worth
+3 archived days; written-down prices count less (confidence 0.4 against 0.6), so they need 5 days.
 
 ```bash
 # Old copies of product pages from the Wayback Machine (archive.org), up to 12 per product, one request every 4 s.
 dotnet run --project src/SmartStylist.Worker -- wayback taylorstitch --limit 20      # a shop's products with < 14 days
 dotnet run --project src/SmartStylist.Worker -- wayback "https://www.jcrew.com/p/..."  # one page (added if new)
 
-# Dated prices written down elsewhere (e.g. the stylist's Recommended and near-miss tables).
+# Long-running core products first (Catalog:CoreProducts: Levi's 541, Reigning Champ Midweight crew, Uniqlo
+# Extra Fine Merino, Patagonia Better Sweater). Plain `wayback` runs core, then every shop.
+dotnet run --project src/SmartStylist.Worker -- wayback core
+
+# Dated prices written down elsewhere: a CSV, or the Wardrobe doc's Recommended and Near-misses tables pasted
+# into a .md file as they are.
 dotnet run --project src/SmartStylist.Worker -- import-prices prices.csv
+dotnet run --project src/SmartStylist.Worker -- import-prices wardrobe-tables.md --date 2026-11-20
 ```
 
-The CSV needs a header with `date`, `url` and `price`; `title`, `shop`, `currency`, `list_price`, `size` and
-`colour` are optional. Dates like `2026-10-14` or `Oct 14 2026`. Keepa covers Amazon price history but needs a paid
+The Wayback lookup asks for the exact product page, including copies saved with a query string (`?variant=...`),
+which is most of the archived history for Shopify and Patagonia pages.
+
+Columns are found by name: `price` is required ("~~$98~~ $54" and "$54 (was $98)" also give the was price),
+plus `date` (or `--date`), and a page address in a `url` column or as a link in any cell. Without an address a
+row needs a `shop` and a `title`/`item`. `list_price`/`was`, `size`, `colour` and `currency` are optional. Dates
+like `2026-10-14`, `Oct 14 2026` or `Nov 18` (the latest such day). Keepa covers Amazon price history but needs a paid
 API key, so it is not wired in.
 
 ## Price-history API
