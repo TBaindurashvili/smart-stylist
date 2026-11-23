@@ -7,7 +7,10 @@ namespace SmartStylist.Modules.Catalog.Tests;
 
 public class DealsReportTests
 {
-    private static List<decimal> Days(int count, decimal price) => Enumerable.Repeat(price, count).ToList();
+    private static readonly DateOnly Start = new(2026, 10, 1);
+
+    private static List<PricePoint> Days(int count, decimal price, bool onSale = false) =>
+        Enumerable.Range(0, count).Select(i => new PricePoint(Start.AddDays(i), price, onSale)).ToList();
 
     [Fact]
     public void Too_little_history_is_still_learning_but_keeps_the_claimed_discount()
@@ -21,36 +24,54 @@ public class DealsReportTests
     }
 
     [Fact]
-    public void Lowest_price_well_below_usual_is_best_price()
+    public void Never_been_cheaper_is_buy_now_whatever_the_percentage()
     {
-        var a = DealsReport.Assess(Days(20, 100m), 80m, 120m);
+        // Only 5% off: no percentage threshold, the history decides.
+        var a = DealsReport.Assess(Days(20, 100m), 95m, null, "USD");
 
-        Assert.Equal(DealVerdict.BestPrice, a.Verdict);
-        Assert.Equal(0.20m, a.RealDiscount);
-        Assert.Equal(100m, a.UsualPrice);
+        Assert.Equal(DealVerdict.BuyNow, a.Verdict);
+        Assert.StartsWith("Buy now: never been this cheap", a.Reason);
+        Assert.Contains("100.00 USD", a.Reason);
     }
 
     [Fact]
-    public void Below_usual_but_lower_before_is_good_price()
+    public void Has_been_cheaper_on_an_item_often_on_sale_is_wait()
     {
-        var history = Days(20, 100m);
-        history.Add(70m);
+        // On sale at 70 every other day: 85 now is below usual, but 70 comes back.
+        var history = Enumerable.Range(0, 20)
+            .Select(i => new PricePoint(Start.AddDays(i), i % 2 == 0 ? 100m : 70m, i % 2 == 1))
+            .ToList();
 
-        var a = DealsReport.Assess(history, 85m, null);
+        var a = DealsReport.Assess(history, 75m, 100m, "USD");
 
-        Assert.Equal(DealVerdict.GoodPrice, a.Verdict);
+        Assert.Equal(DealVerdict.Wait, a.Verdict);
         Assert.Equal(70m, a.LowestBefore);
+        Assert.Equal(Start.AddDays(19), a.LowestOn);
+        Assert.StartsWith("Wait: it was 70.00 USD on Oct 20", a.Reason);
+    }
+
+    [Fact]
+    public void Rare_sale_on_a_usually_full_price_item_is_buy_now_even_if_it_was_cheaper_once()
+    {
+        var history = Days(30, 100m);
+        history[3] = history[3] with { Price = 60m, OnSale = true }; // one flash sale a month ago
+
+        var a = DealsReport.Assess(history, 80m, 100m);
+
+        Assert.Equal(DealVerdict.BuyNow, a.Verdict);
+        Assert.StartsWith("Buy now: rarely discounted (on sale 1 of 30 days)", a.Reason);
     }
 
     [Fact]
     public void Was_price_on_the_usual_price_is_a_fake_sale()
     {
         // Always "on sale" at 60: the crossed-out 100 was never the real price.
-        var a = DealsReport.Assess(Days(30, 60m), 60m, 100m);
+        var a = DealsReport.Assess(Days(30, 60m, onSale: true), 60m, 100m);
 
         Assert.Equal(DealVerdict.FakeSale, a.Verdict);
         Assert.Equal(0.40m, a.ClaimedDiscount);
         Assert.Equal(0m, a.RealDiscount);
+        Assert.StartsWith("Skip:", a.Reason);
     }
 
     [Fact]
@@ -88,7 +109,7 @@ public class DealsReportTests
         Assert.Equal("541 Jeans", row.Title);
         Assert.Equal(75m, row.Price);
         Assert.Equal(PriceSource.Extension, row.Source);
-        Assert.Equal(DealVerdict.BestPrice, row.Assessment.Verdict);
+        Assert.Equal(DealVerdict.BuyNow, row.Assessment.Verdict);
         Assert.Equal(0.25m, row.Assessment.RealDiscount);
     }
 }

@@ -71,7 +71,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 
 button.pill { border: 1px solid transparent; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
 button.pill.selected { border-color: var(--ink); }
-.verdict-bestprice { background: #DCEFE6; color: var(--accent); }
-.verdict-goodprice { background: #EAF1DA; color: #4E6B17; }
+.verdict-buynow { background: #DCEFE6; color: var(--accent); }
+.verdict-wait { background: #F6E7CC; color: var(--warn); }
+.reason { font-size: 13px; margin-top: 4px; max-width: 46ch; }
 .verdict-stilllearning { background: var(--line); color: var(--muted); }
 .verdict-fakesale { background: #F4D9D6; color: var(--bad); }

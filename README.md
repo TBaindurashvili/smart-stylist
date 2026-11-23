@@ -31,7 +31,7 @@ If port 5432 is taken, start Postgres with `POSTGRES_PORT=5433 docker compose up
 `POSTGRES_PORT=5433` when you run the worker and the web app; both apps read it and no JSON edit is needed.
 
 The **Deals** page (`/deals`) lists recent prices that are on sale or below their usual price, with a verdict:
-best price, good price, fake sale (the "was" price is fiction), or still learning (under 14 days of history).
+buy now (never been cheaper, or a rare sale on an item usually at full price), wait (it has been cheaper), fake sale (the "was" price is fiction), or still learning (under 14 days of history). No percentage thresholds: the history decides.
 
 That run takes roughly 10 to 20 minutes for all 15 shops, because the collector waits 1.5 s between pages.
 It applies database migrations itself.

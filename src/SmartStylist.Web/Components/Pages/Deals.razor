@@ -4,11 +4,11 @@
 
 <PageTitle>Deals · Smart Stylist</PageTitle>
 
-<h1>Is this sale real?</h1>
+<h1>Buy now or wait?</h1>
 <p class="lead">
     Prices from the last @DealsReport.RecentDays days that are on sale or below their usual price, from sale emails,
-    the browser extension, Awin product feeds and the daily collector. Each is compared with the product's own price history:
-    <strong>usual</strong> is the typical price on earlier days. A verdict needs @DealsReport.MinHistoryDays days of history.
+    the browser extension, Awin product feeds and the daily collector. Each is judged by the product's own price history,
+    not by the percentage the shop advertises. A verdict needs @DealsReport.MinHistoryDays days of history.
 </p>
 
 @if (_rows is null)
@@ -22,7 +22,7 @@ else if (_rows.Count == 0)
 else
 {
     <div class="summary">
-        @foreach (var verdict in new[] { DealVerdict.BestPrice, DealVerdict.GoodPrice, DealVerdict.StillLearning, DealVerdict.FakeSale })
+        @foreach (var verdict in new[] { DealVerdict.BuyNow, DealVerdict.Wait, DealVerdict.StillLearning, DealVerdict.FakeSale })
         {
             <button class="pill verdict-@Css(verdict) @(_filter == verdict ? "selected" : "")" @onclick="() => Toggle(verdict)">
                 @Label(verdict): @_rows.Count(r => r.Assessment.Verdict == verdict)
@@ -47,7 +47,10 @@ else
                             <a href="@row.Url" target="_blank" rel="noopener">@row.Title</a>
                             <div class="muted">@row.ShopName@(row.Brand is null ? "" : $" · {row.Brand}")</div>
                         </td>
-                        <td><span class="pill verdict-@Css(a.Verdict)" title="@Explain(row)">@Label(a.Verdict)</span></td>
+                        <td>
+                            <span class="pill verdict-@Css(a.Verdict)">@Label(a.Verdict)</span>
+                            <div class="reason">@a.Reason</div>
+                        </td>
                         <td class="num">@Money(row.Price, row.Currency)</td>
                         <td class="num">
                             @if (a.ClaimedDiscount is { } claimed)
@@ -67,8 +70,8 @@ else
     </div>
 
     <p class="muted">
-        <strong>Best price</strong>: the lowest we have seen and @DealsReport.BestPriceDiscount.ToString("P0")+ below usual.
-        <strong>Good price</strong>: @DealsReport.GoodPriceDiscount.ToString("P0")+ below usual.
+        <strong>Buy now</strong>: never been cheaper, or a rare sale on an item that is usually full price.
+        <strong>Wait</strong>: below its usual price, but it has been cheaper, so that price is likely to come back.
         <strong>Fake sale</strong>: the shop shows a crossed-out price, but this is about what it usually costs.
         <strong>Still learning</strong>: fewer than @DealsReport.MinHistoryDays earlier days of prices, so only the shop's claim is shown.
     </p>
@@ -84,8 +87,8 @@ else
 
     private static string Label(DealVerdict verdict) => verdict switch
     {
-        DealVerdict.BestPrice => "Best price",
-        DealVerdict.GoodPrice => "Good price",
+        DealVerdict.BuyNow => "Buy now",
+        DealVerdict.Wait => "Wait",
         DealVerdict.StillLearning => "Still learning",
         DealVerdict.FakeSale => "Fake sale",
         _ => "Usual price",
@@ -100,14 +103,6 @@ else
         PriceSource.AffiliateFeed => "Awin feed",
         _ => "collector",
     };
-
-    private static string Explain(DealRow row)
-    {
-        var a = row.Assessment;
-        return a.UsualPrice is null
-            ? $"Only {a.Days} day(s) of prices so far."
-            : $"Usually {Money(a.UsualPrice.Value, row.Currency)}, lowest before {Money(a.LowestBefore!.Value, row.Currency)}, over {a.Days} days.";
-    }
 
     private static string Money(decimal amount, string currency) => $"{amount:0.00} {currency}";
 }
