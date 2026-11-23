@@ -11,6 +11,8 @@ using SmartStylist.Worker;
 //   dotnet run -- install-browser      -> download headless Chromium for shops that need a real browser
 //   dotnet run -- probe <url> [--browser]  -> show what the parser reads from one product page and save the HTML
 //   dotnet run -- newsletters [--folder <dir>]  -> price new sale emails from the IMAP mailbox, or from saved .eml files
+//   dotnet run -- awin-feeds           -> list the Awin product feeds and which programmes you joined
+//   dotnet run -- awin                 -> import today's prices from the Awin product feeds
 var command = CliCommand.Parse(args);
 
 var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
@@ -32,7 +34,7 @@ if (command is null)
         .UseSimpleAssemblyNameTypeSerializer()
         .UseRecommendedSerializerSettings()
         .UsePostgreSqlStorage(
-            storage => storage.UseNpgsqlConnection(builder.Configuration.GetConnectionString(CatalogModule.ConnectionStringName)),
+            storage => storage.UseNpgsqlConnection(CatalogModule.GetConnectionString(builder.Configuration)),
             new PostgreSqlStorageOptions { SchemaName = "hangfire", PrepareSchemaIfNecessary = true }));
 
     builder.Services.AddHangfireServer(options => options.WorkerCount = builder.Configuration.GetValue("Hangfire:WorkerCount", 2));

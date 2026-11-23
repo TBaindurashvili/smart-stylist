@@ -27,6 +27,12 @@ dotnet run --project src/SmartStylist.Worker -- install-browser   # once: headle
 dotnet run --project src/SmartStylist.Worker -- collect --limit 20   # quick test: 20 products per shop, then prints the report
 ```
 
+If port 5432 is taken, start Postgres with `POSTGRES_PORT=5433 docker compose up -d` and set the same
+`POSTGRES_PORT=5433` when you run the worker and the web app; both apps read it and no JSON edit is needed.
+
+The **Deals** page (`/deals`) lists recent prices that are on sale or below their usual price, with a verdict:
+best price, good price, fake sale (the "was" price is fiction), or still learning (under 14 days of history).
+
 That run takes roughly 10 to 20 minutes for all 15 shops, because the collector waits 1.5 s between pages.
 It applies database migrations itself.
 
@@ -38,7 +44,7 @@ dotnet run --project src/SmartStylist.Worker -- report                 # print t
 dotnet run --project src/SmartStylist.Worker -- probe <product url> [--browser]   # what the parser reads from one page; saves the HTML
 dotnet run --project src/SmartStylist.Worker -- newsletters [--folder <dir>]           # price new sale emails (mailbox, or saved .eml files)
 dotnet run --project src/SmartStylist.Worker                           # leave running: collects every shop daily at 05:00 UTC
-dotnet run --project src/SmartStylist.Web                              # http://localhost:5227 (report, /hangfire jobs, browser extension)
+dotnet run --project src/SmartStylist.Web                              # http://localhost:5227 (/deals, report, /hangfire jobs, browser extension)
 ```
 
 ## How prices are collected
@@ -82,8 +88,8 @@ Status after two real runs on 2026-10-24 (20 products per shop):
 | `uniqlo` | Uniqlo | **Usable** via browser: sizes and stock; some sitemap products are gone (404) |
 | `jcrew` | J.Crew | **Usable** via browser: prices and stock, no sizes |
 | `thursdayboots` | Thursday Boots | **Poor** via browser; feed rate-limited (429). URL pattern added, 429 now retried once |
-| `dressup` | Dressup.ge | Pages load but no price data found. Needs a `probe` of one product page |
-| `patagonia` | Patagonia | Same as Dressup.ge |
+| `dressup` | Dressup.ge | Collector off (no price data from crawled pages). Save prices with the browser extension, which works here |
+| `patagonia` | Patagonia | Collector off, same as Dressup.ge |
 | `levis`, `lululemon`, `adidas`, `underarmour`, `kohls`, `brooksbrothers`, `ssense` | | Off: blocked in run 1 |
 | `clarks`, `huckberry`, `timberland`, `ecco`, `lacoste`, `massimodutti`, `mrporter`, `steepandcheap` | | Off: blocked in run 2 |
 
@@ -117,6 +123,22 @@ To use it, start the web app, open `chrome://extensions`, turn on Developer mode
 the `extension` folder. Nothing is saved while the app is off; the toolbar icon then shows a red `!`.
 
 A new shop has to be added both to `Catalog:Shops` and to `matches` in `extension/manifest.json`.
+
+## Prices from Awin product feeds
+
+Awin (publisher id 3156285) gives each programme you join a daily product feed with prices, "was" prices and sizes.
+Get the feed API key in Awin under **Toolbox → Create-a-Feed**, then:
+
+```bash
+dotnet user-secrets set "Awin:ApiKey" "<key>" --project src/SmartStylist.Worker
+dotnet run --project src/SmartStylist.Worker -- awin-feeds   # which feeds exist and which programmes accepted you
+dotnet run --project src/SmartStylist.Worker -- awin         # import today's prices from every joined programme
+```
+
+With the key set, the worker also imports daily on `Awin:Cron` (06:00 UTC). `Awin:FeedIds` limits the import to
+some feeds; empty means every joined programme. Up to `Awin:MaxProductsPerFeed` (5000) products per feed are saved.
+Each advertiser gets its own shop, `awin-<advertiser id>` (no crawler runs for it), unless a shop in `Catalog:Shops`
+has a matching `"AwinAdvertiserId"`. Feed prices show on the Deals page as "Awin feed".
 
 ## Prices from sale emails
 

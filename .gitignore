@@ -483,3 +483,7 @@ $RECYCLE.BIN/
 
 # Pages saved by `probe`
 probe-*.html
+
+# Design screenshots live in the project files, not in git
+claude_upload/
+design_references/

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SmartStylist.Modules.Catalog.Affiliates;
 using SmartStylist.Modules.Catalog.Collection;
 using SmartStylist.Modules.Catalog.Newsletters;
 using SmartStylist.Modules.Catalog.Persistence;
@@ -14,6 +15,22 @@ public static class CatalogModule
 {
     public const string ConnectionStringName = "Postgres";
 
+    /// <summary>
+    /// The Postgres connection string. <c>POSTGRES_PORT</c> (the same variable docker-compose.yml reads)
+    /// overrides the port, so a machine whose 5432 is taken needs no JSON edit.
+    /// </summary>
+    public static string GetConnectionString(IConfiguration configuration)
+    {
+        var connectionString = configuration.GetConnectionString(ConnectionStringName)
+            ?? throw new InvalidOperationException($"Missing connection string '{ConnectionStringName}'.");
+        if (!int.TryParse(configuration["POSTGRES_PORT"], out var port))
+        {
+            return connectionString;
+        }
+
+        return new Npgsql.NpgsqlConnectionStringBuilder(connectionString) { Port = port }.ConnectionString;
+    }
+
     /// <summary>Registers the Catalog module: products, daily prices, collectors and the data-quality report.</summary>
     public static IServiceCollection AddCatalogModule(this IServiceCollection services, IConfiguration configuration)
     {
@@ -22,9 +39,9 @@ public static class CatalogModule
             .Validate(o => o.Shops.Select(s => s.Key).Distinct().Count() == o.Shops.Count, "Shop keys must be unique.")
             .ValidateOnStart();
         services.AddOptions<NewsletterOptions>().Bind(configuration.GetSection(NewsletterOptions.SectionName));
+        services.AddOptions<AwinOptions>().Bind(configuration.GetSection(AwinOptions.SectionName));
 
-        var connectionString = configuration.GetConnectionString(ConnectionStringName)
-            ?? throw new InvalidOperationException($"Missing connection string '{ConnectionStringName}'.");
+        var connectionString = GetConnectionString(configuration);
 
         services.AddDbContext<CatalogDbContext>(options => options
             .UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", CatalogDbContext.Schema))
@@ -69,6 +86,7 @@ public static class CatalogModule
             sp.GetRequiredService<TimeProvider>()));
         services.AddScoped<CollectPricesJob>();
         services.AddScoped<DataQualityReport>();
+        services.AddScoped<DealsReport>();
         services.AddSingleton(TimeProvider.System);
 
         services.AddHttpClient<ILinkResolver, LinkResolver>(LinkResolver.ClientName, (sp, client) =>
@@ -87,6 +105,9 @@ public static class CatalogModule
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<NewsletterImportService>>()));
         services.AddScoped<ImportNewslettersJob>();
+
+        services.AddHttpClient<AwinFeedImportService>(AwinFeedImportService.ClientName, client => client.Timeout = TimeSpan.FromMinutes(10));
+        services.AddScoped<ImportAwinFeedsJob>();
         return services;
     }
 }

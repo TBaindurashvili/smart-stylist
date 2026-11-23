@@ -2,6 +2,7 @@ using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SmartStylist.Modules.Catalog;
+using SmartStylist.Modules.Catalog.Affiliates;
 using SmartStylist.Modules.Catalog.Collection;
 using SmartStylist.Modules.Catalog.Newsletters;
 using SmartStylist.Modules.Catalog.Persistence;
@@ -14,6 +15,7 @@ internal sealed class RecurringJobsSetup(
     IRecurringJobManager recurringJobs,
     IOptions<CatalogOptions> options,
     IOptions<NewsletterOptions> newsletterOptions,
+    IOptions<AwinOptions> awinOptions,
     ILogger<RecurringJobsSetup> logger) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -57,6 +59,22 @@ internal sealed class RecurringJobsSetup(
                 new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
             logger.LogInformation("Scheduled sale email reading from {Host}/{Folder} ({Cron} UTC)",
                 newsletters.Imap.Host, newsletters.Imap.Folder, newsletters.Cron);
+        }
+
+        var awin = awinOptions.Value;
+        if (string.IsNullOrWhiteSpace(awin.ApiKey))
+        {
+            recurringJobs.RemoveIfExists(ImportAwinFeedsJob.RecurringJobId);
+            logger.LogInformation("Awin feed import is off: Awin:ApiKey is empty");
+        }
+        else
+        {
+            recurringJobs.AddOrUpdate<ImportAwinFeedsJob>(
+                ImportAwinFeedsJob.RecurringJobId,
+                job => job.RunAsync(CancellationToken.None),
+                awin.Cron,
+                new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
+            logger.LogInformation("Scheduled Awin feed import ({Cron} UTC)", awin.Cron);
         }
     }
 

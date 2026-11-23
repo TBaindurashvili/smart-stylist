@@ -11,4 +11,7 @@ public enum PriceSource
 
     /// <summary>Read from a product page the user opened, by the browser extension.</summary>
     Extension,
+
+    /// <summary>Read from an affiliate network's product feed, such as Awin.</summary>
+    AffiliateFeed,
 }
