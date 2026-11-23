@@ -64,7 +64,8 @@ internal static class OutsideEvidenceWriter
         foreach (var offer in offers.GroupBy(o => o.VariantKey).Select(g => g.First()))
         {
             var key = Truncate(offer.VariantKey, 200);
-            if (!taken.Add(key))
+            if (PriceSanity.Check(offer.Price, offer.ListPrice, null, offer.Currency, product.Title, new PriceSanityOptions()) is not null
+                || !taken.Add(key))
             {
                 continue;
             }

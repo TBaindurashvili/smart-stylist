@@ -9,22 +9,30 @@ namespace SmartStylist.Modules.Catalog.Collection;
 /// <summary>Runs one shop's daily collection and stores products, prices and a run record.</summary>
 public sealed class PriceCollectionService
 {
+    // The browser tier is no longer tried automatically: it is kept for watched pages (WatchUrls) and for shops
+    // configured with Strategy BrowserJsonLd, so a visible Chrome never crawls a whole shop.
     private static readonly CollectorStrategy[] AutoOrder =
-        [CollectorStrategy.Shopify, CollectorStrategy.SitemapJsonLd, CollectorStrategy.BrowserJsonLd];
+        [CollectorStrategy.Shopify, CollectorStrategy.SitemapJsonLd];
 
     private readonly CatalogDbContext _db;
     private readonly IReadOnlyDictionary<CollectorStrategy, IShopCollector> _collectors;
     private readonly IOptions<CatalogOptions> _options;
     private readonly TimeProvider _time;
     private readonly ILogger<PriceCollectionService> _logger;
+    private readonly HttpPageFetcher? _http;
+    private readonly EgressFetchers? _egress;
 
     internal PriceCollectionService(
         CatalogDbContext db,
         IEnumerable<IShopCollector> collectors,
         IOptions<CatalogOptions> options,
         TimeProvider time,
-        ILogger<PriceCollectionService> logger)
+        ILogger<PriceCollectionService> logger,
+        HttpPageFetcher? http = null,
+        EgressFetchers? egress = null)
     {
+        _http = http;
+        _egress = egress;
         _db = db;
         _collectors = collectors.ToDictionary(c => c.Strategy);
         _options = options;
@@ -53,14 +61,27 @@ public sealed class PriceCollectionService
             .ToListAsync(cancellationToken);
 
         var baseUrl = new Uri(shop.BaseUrl);
-        var request = new ShopRequest(
+        ShopRequest request = new(
             ShopRoot: new Uri(baseUrl.GetLeftPart(UriPartial.Authority)),
             BaseUrl: baseUrl,
             Currency: shop.Currency,
             SitemapUrl: shopOptions?.SitemapUrl,
             ProductUrlPattern: shopOptions?.ProductUrlPattern,
             KnownProductUrls: knownUrls,
-            MaxProducts: limit);
+            MaxProducts: limit)
+        {
+            DelayMs = _options.Value.RequestDelayMs,
+        };
+
+        if (shopOptions?.Egress is { Length: > 0 } egressName && _http is not null)
+        {
+            var egressFetcher = _egress?.Get(egressName);
+            request = request with
+            {
+                Http = new EgressSwitchingFetcher(_http, egressFetcher, shop.Key, egressName, _logger),
+                DelayMs = Math.Max(_options.Value.RequestDelayMs, _egress?.Options(egressName)?.MinDelayMs ?? 0),
+            };
+        }
 
         var errors = new List<string>();
         try
@@ -89,7 +110,7 @@ public sealed class PriceCollectionService
                         shop.DetectedStrategy = strategy;
                     }
 
-                    await SaveAsync(shop, run, result.Products, cancellationToken);
+                    await SaveAsync(shop, run, result.Products, errors, cancellationToken);
                     run.Status = RunStatus.Succeeded;
                     break;
                 }
@@ -146,7 +167,7 @@ public sealed class PriceCollectionService
             : AutoOrder;
     }
 
-    private async Task SaveAsync(Shop shop, CollectionRun run, IReadOnlyList<ScrapedProduct> scraped, CancellationToken cancellationToken)
+    private async Task SaveAsync(Shop shop, CollectionRun run, IReadOnlyList<ScrapedProduct> scraped, List<string> notes, CancellationToken cancellationToken)
     {
         var now = _time.GetUtcNow();
         var today = DateOnly.FromDateTime(now.UtcDateTime);
@@ -158,6 +179,16 @@ public sealed class PriceCollectionService
             .ToDictionaryAsync(p => p.ExternalId, cancellationToken);
 
         var existingIds = existing.Values.Select(p => p.Id).ToList();
+        var usualFrom = today.AddDays(-90);
+        var usual = (await _db.PriceSnapshots
+                .Where(s => existingIds.Contains(s.ProductId) && s.ObservedOn >= usualFrom && s.ObservedOn < today)
+                .Select(s => new { s.ProductId, s.VariantKey, s.Price })
+                .ToListAsync(cancellationToken))
+            .GroupBy(s => (s.ProductId, s.VariantKey))
+            .ToDictionary(g => g.Key, g => Median(g.Select(s => s.Price).ToList()));
+        var sanity = _options.Value.PriceSanity;
+        var rejected = new List<string>();
+
         var todaysSnapshots = await _db.PriceSnapshots
             .Where(s => s.ObservedOn == today && existingIds.Contains(s.ProductId))
             .ToDictionaryAsync(s => (s.ProductId, s.VariantKey), cancellationToken);
@@ -186,6 +217,14 @@ public sealed class PriceCollectionService
             foreach (var offer in item.Offers.GroupBy(o => o.VariantKey).Select(g => g.First()))
             {
                 var variantKey = Truncate(offer.VariantKey, 200);
+                decimal? usualPrice = product.Id != 0 && usual.TryGetValue((product.Id, variantKey), out var median) ? median : null;
+                var why = PriceSanity.Check(offer.Price, offer.ListPrice, usualPrice, offer.Currency, item.Title, sanity);
+                if (why is not null)
+                {
+                    rejected.Add($"{item.Title} {offer.SizeLabel}: {why}");
+                    continue;
+                }
+
                 if (product.Id == 0 || !todaysSnapshots.TryGetValue((product.Id, variantKey), out var snapshot))
                 {
                     snapshot = new PriceSnapshot { Product = product, VariantKey = variantKey, Currency = offer.Currency, ObservedOn = today };
@@ -205,7 +244,20 @@ public sealed class PriceCollectionService
             run.ProductsSeen++;
         }
 
+        if (rejected.Count > 0)
+        {
+            _logger.LogWarning("{Shop}: rejected {Count} prices that cannot be real, e.g. {Example}", shop.Key, rejected.Count, rejected[0]);
+            notes.Add($"Rejected {rejected.Count} unreal prices, e.g. {rejected[0]}");
+        }
+
         await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static decimal Median(IReadOnlyList<decimal> values)
+    {
+        var sorted = values.Order().ToList();
+        var mid = sorted.Count / 2;
+        return sorted.Count % 2 == 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
     }
 
     private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];

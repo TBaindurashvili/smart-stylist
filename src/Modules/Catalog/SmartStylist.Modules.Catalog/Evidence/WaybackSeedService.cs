@@ -49,9 +49,9 @@ public sealed class WaybackSeedService
         }
 
         var products = await query
-            .Where(p => p.Snapshots.Where(s => s.Source != PriceSource.Archive && s.Source != PriceSource.Manual)
+            .Where(p => p.Snapshots.Where(s => s.Source != PriceSource.Archive && s.Source != PriceSource.ManualHistory)
                 .Select(s => s.ObservedOn).Distinct().Count() < Reporting.DealsReport.MinHistoryDays)
-            .OrderByDescending(p => p.LastSeenAt)
+            .OrderBy(p => p.FirstSeenAt) // long-running products have archived copies; brand-new ones do not
             .Take(maxProducts)
             .Select(p => new { p.Id, p.Url })
             .ToListAsync(cancellationToken);
@@ -68,6 +68,20 @@ public sealed class WaybackSeedService
                 PricesAdded = total.PricesAdded + one.PricesAdded,
                 Notes = [.. total.Notes, .. one.Notes],
             };
+        }
+
+        return total;
+    }
+
+    /// <summary>Seeds the long-running core products listed in Catalog:CoreProducts, by their exact page address.</summary>
+    public async Task<WaybackSeedResult> SeedCoreAsync(int copiesPerProduct, CancellationToken cancellationToken)
+    {
+        var total = new WaybackSeedResult(0, 0, 0, 0, []);
+        foreach (var url in _options.Value.CoreProducts)
+        {
+            var one = await SeedUrlAsync(new Uri(url), null, copiesPerProduct, cancellationToken);
+            total = new WaybackSeedResult(total.Products + one.Products, total.PagesRead + one.PagesRead,
+                total.PagesWithPrice + one.PagesWithPrice, total.PricesAdded + one.PricesAdded, [.. total.Notes, .. one.Notes]);
         }
 
         return total;
@@ -128,7 +142,7 @@ public sealed class WaybackSeedService
     internal async Task<IReadOnlyList<ArchivedCopy>> ListCopiesAsync(Uri pageUrl, DateOnly since, CancellationToken cancellationToken)
     {
         var target = pageUrl.GetLeftPart(UriPartial.Path);
-        var cdx = $"{Archive}/cdx/search/cdx?url={Uri.EscapeDataString(target)}&output=json&fl=timestamp,original,statuscode" +
+        var cdx = $"{Archive}/cdx/search/cdx?url={Uri.EscapeDataString(target)}&matchType=exact&output=json&fl=timestamp,original,statuscode" +
                   $"&filter=statuscode:200&collapse=timestamp:8&from={since:yyyyMMdd}&limit=400";
         string json;
         try

@@ -23,6 +23,18 @@ public sealed class CatalogOptions
 
     public BrowserOptions Browser { get; set; } = new();
 
+    /// <summary>Ways out through other countries, by name (e.g. "us"), for shops that block or redirect visitors from Georgia.</summary>
+    public Dictionary<string, Collection.EgressOptions> Egress { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Watched product pages opened in the visible Chrome a few times a day (Catalog:Shops:*:WatchUrls).</summary>
+    public WatchOptions Watch { get; set; } = new();
+
+    /// <summary>Long-running products whose Wayback Machine history is seeded first (`wayback core`).</summary>
+    public List<string> CoreProducts { get; set; } = [];
+
+    /// <summary>Rejects prices that cannot be real (misread placeholders) before they are stored.</summary>
+    public Collection.PriceSanityOptions PriceSanity { get; set; } = new();
+
     public List<ShopOptions> Shops { get; set; } = [];
 }
 
@@ -64,6 +76,21 @@ public sealed class ShopOptions
     /// <summary>Checkout tips learned from real orders.</summary>
     public string? CheckoutNote { get; set; }
 
+    /// <summary>
+    /// Name of a Catalog:Egress entry (e.g. "us"). The plain-HTTP tier tries the home connection first and switches to
+    /// this egress when the shop redirects to another country's site or blocks the page.
+    /// </summary>
+    public string? Egress { get; set; }
+
+    /// <summary>
+    /// Open this shop's watched product pages in the browser (Catalog:Browser, e.g. a visible Chrome) a few times a day,
+    /// for shops that only answer a real browser. Watched = WatchUrls plus products saved at this shop with the extension.
+    /// </summary>
+    public bool WatchInBrowser { get; set; }
+
+    /// <summary>Product pages to watch in the browser, in addition to products saved with the extension.</summary>
+    public List<string> WatchUrls { get; set; } = [];
+
     /// <summary>Free text for people reading the config, e.g. why a shop is disabled. Not used by code.</summary>
     public string? Note { get; set; }
 }
@@ -91,4 +118,16 @@ public sealed class BrowserOptions
 
     /// <summary>Extra pause after each page, on top of Catalog:RequestDelayMs, so a visible browser moves at a person's pace.</summary>
     public int PageSettleMs { get; set; } = 1500;
+}
+
+public sealed class WatchOptions
+{
+    /// <summary>Cron (UTC) for opening watched pages; a few times a day at most. 05:00, 11:00, 17:00 UTC = 9, 15, 21 in Tbilisi.</summary>
+    public string Cron { get; set; } = "0 5,11,17 * * *";
+
+    /// <summary>Most watched pages per shop per run.</summary>
+    public int MaxPagesPerShop { get; set; } = 15;
+
+    /// <summary>Pause between watched pages, at a person's pace.</summary>
+    public int DelayMs { get; set; } = 20000;
 }

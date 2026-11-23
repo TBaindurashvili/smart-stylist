@@ -74,18 +74,30 @@ public static class CatalogModule
         services.AddScoped<IShopCollector, ShopifyCollector>();
         services.AddScoped<IShopCollector, SitemapJsonLdCollector>();
         services.AddScoped<IShopCollector, BrowserJsonLdCollector>();
+        services.AddScoped<IShopCollector, UniqloApiCollector>();
+        services.AddSingleton<EgressFetchers>();
         services.AddScoped(sp => new PriceCollectionService(
             sp.GetRequiredService<CatalogDbContext>(),
             sp.GetServices<IShopCollector>(),
             sp.GetRequiredService<IOptions<CatalogOptions>>(),
             sp.GetRequiredService<TimeProvider>(),
-            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PriceCollectionService>>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PriceCollectionService>>(),
+            sp.GetRequiredService<HttpPageFetcher>(),
+            sp.GetRequiredService<EgressFetchers>()));
         services.AddScoped<ShopCatalogSync>();
         services.AddScoped(sp => new ProductPageProbe(sp.GetRequiredService<HttpPageFetcher>(), sp.GetRequiredService<BrowserPageFetcher>()));
         services.AddScoped(sp => new PageCaptureService(
             sp.GetRequiredService<CatalogDbContext>(),
-            sp.GetRequiredService<TimeProvider>()));
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<IOptions<CatalogOptions>>().Value.PriceSanity));
         services.AddScoped<CollectPricesJob>();
+        services.AddScoped(sp => new WatchedPagesService(
+            sp.GetRequiredService<CatalogDbContext>(),
+            sp.GetRequiredService<BrowserPageFetcher>(),
+            sp.GetRequiredService<PageCaptureService>(),
+            sp.GetRequiredService<IOptions<CatalogOptions>>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<WatchedPagesService>>()));
+        services.AddScoped<WatchPagesJob>();
         services.AddScoped<PlatformDetector>();
         services.AddScoped<DataQualityReport>();
         services.AddScoped<DealsReport>();

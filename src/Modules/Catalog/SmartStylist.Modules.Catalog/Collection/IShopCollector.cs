@@ -20,7 +20,14 @@ internal sealed record ShopRequest(
     string? SitemapUrl,
     string? ProductUrlPattern,
     IReadOnlyList<string> KnownProductUrls,
-    int MaxProducts);
+    int MaxProducts)
+{
+    /// <summary>Plain-HTTP fetcher for this shop when it differs from the default, e.g. one that can switch to a US egress.</summary>
+    public IPageFetcher? Http { get; init; }
+
+    /// <summary>Pause between requests to this shop.</summary>
+    public int DelayMs { get; init; }
+}
 
 internal sealed record CollectorResult(IReadOnlyList<ScrapedProduct> Products, int FailedRequests);
 

@@ -20,7 +20,7 @@ internal sealed class ShopifyCollector(HttpPageFetcher fetcher, IOptions<Catalog
             IReadOnlyList<ScrapedProduct> batch;
             try
             {
-                var json = await fetcher.GetPageAsync(url, cancellationToken);
+                var json = await (request.Http ?? fetcher).GetPageAsync(url, cancellationToken);
                 batch = ShopifyFeedParser.Parse(json, request.ShopRoot, request.Currency);
             }
             catch (Exception ex) when (page == 1 && ex is HttpRequestException or JsonException or FormatException)
@@ -34,7 +34,7 @@ internal sealed class ShopifyCollector(HttpPageFetcher fetcher, IOptions<Catalog
             }
 
             products.AddRange(batch);
-            await Task.Delay(options.Value.RequestDelayMs, cancellationToken);
+            await Task.Delay(Math.Max(request.DelayMs, options.Value.RequestDelayMs), cancellationToken);
         }
 
         return new CollectorResult(products.Take(request.MaxProducts).ToList(), FailedRequests: 0);

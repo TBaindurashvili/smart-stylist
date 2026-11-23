@@ -55,7 +55,7 @@ public class OutsideEvidenceTests
         await using var host = new TestHost(TaylorStitch);
         await host.InitializeAsync();
         host.Web.Serve(
-            "https://web.archive.org/cdx/search/cdx?url=https%3A%2F%2Fwww.taylorstitch.com%2Fproducts%2Fthe-jack-in-navy&output=json&fl=timestamp,original,statuscode&filter=statuscode:200&collapse=timestamp:8&from=20251024&limit=400",
+            "https://web.archive.org/cdx/search/cdx?url=https%3A%2F%2Fwww.taylorstitch.com%2Fproducts%2Fthe-jack-in-navy&matchType=exact&output=json&fl=timestamp,original,statuscode&filter=statuscode:200&collapse=timestamp:8&from=20251024&limit=400",
             $$"""[["timestamp","original","statuscode"],["20260601000000","{{PageUrl}}","200"],["20260901000000","{{PageUrl}}","200"]]""",
             "application/json");
         host.Web.Serve($"https://web.archive.org/web/20260601000000id_/{PageUrl}", Page(128m));
@@ -92,7 +92,7 @@ public class OutsideEvidenceTests
         var snapshots = await SnapshotsAsync(host);
         Assert.Equal([128m, 98m], snapshots.Select(s => s.Price));
         Assert.Equal(128m, snapshots[1].ListPrice);
-        Assert.All(snapshots, s => Assert.Equal(PriceSource.Manual, s.Source));
+        Assert.All(snapshots, s => Assert.Equal(PriceSource.ManualHistory, s.Source));
     }
 
     [Fact]

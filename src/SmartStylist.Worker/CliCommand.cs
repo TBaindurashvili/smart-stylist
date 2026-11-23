@@ -13,7 +13,7 @@ namespace SmartStylist.Worker;
 
 internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, int? Limit, bool UseBrowser, string? Folder)
 {
-    private static readonly string[] Commands = ["collect", "report", "migrate", "install-browser", "probe", "newsletters", "awin", "awin-feeds", "detect", "wayback", "import-prices"];
+    private static readonly string[] Commands = ["collect", "report", "migrate", "install-browser", "probe", "newsletters", "awin", "awin-feeds", "detect", "wayback", "import-prices", "watch"];
 
     public static CliCommand? Parse(string[] args)
     {
@@ -66,7 +66,7 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
             return await ProbeAsync(provider.GetRequiredService<ProductPageProbe>(), cancellationToken);
         }
 
-        if (Name is "migrate" or "collect" or "newsletters" or "awin" or "detect" or "wayback" or "import-prices")
+        if (Name is "migrate" or "collect" or "newsletters" or "awin" or "detect" or "wayback" or "import-prices" or "watch")
         {
             await provider.GetRequiredService<CatalogDbContext>().Database.MigrateAsync(cancellationToken);
             await provider.GetRequiredService<WardrobeDbContext>().Database.MigrateAsync(cancellationToken);
@@ -100,6 +100,16 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
         if (Name == "detect")
         {
             await DetectAsync(provider, runLog, cancellationToken);
+        }
+
+        if (Name == "watch")
+        {
+            foreach (var r in await provider.GetRequiredService<WatchedPagesService>().RunAsync(ShopKeys, cancellationToken))
+            {
+                var line = $"{r.ShopKey,-16} {r.Pages,3} watched pages {r.Saved,3} saved" + (r.StoppedBecause is null ? "" : $"  stopped: {r.StoppedBecause}");
+                Console.WriteLine(line);
+                runLog.WriteLine(line);
+            }
         }
 
         if (Name == "wayback")
@@ -197,15 +207,21 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
     private async Task WaybackAsync(WaybackSeedService wayback, RunLogFile runLog, CancellationToken cancellationToken)
     {
         const int copies = 12;
+        var core = ShopKeys.Contains("core", StringComparer.OrdinalIgnoreCase);
         var urls = ShopKeys.Where(k => k.StartsWith("http", StringComparison.OrdinalIgnoreCase)).ToList();
-        var shops = ShopKeys.Except(urls).ToList();
+        var shops = ShopKeys.Except(urls).Where(k => !string.Equals(k, "core", StringComparison.OrdinalIgnoreCase)).ToList();
         var results = new List<WaybackSeedResult>();
+        if (core)
+        {
+            results.Add(await wayback.SeedCoreAsync(copies, cancellationToken));
+        }
+
         foreach (var url in urls)
         {
             results.Add(await wayback.SeedUrlAsync(new Uri(url), null, copies, cancellationToken));
         }
 
-        if (shops.Count > 0 || urls.Count == 0)
+        if (shops.Count > 0 || (urls.Count == 0 && !core))
         {
             results.Add(await wayback.SeedShopsAsync(shops, Limit ?? 20, copies, cancellationToken));
         }

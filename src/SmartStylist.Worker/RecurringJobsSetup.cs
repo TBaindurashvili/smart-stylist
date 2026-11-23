@@ -46,6 +46,21 @@ internal sealed class RecurringJobsSetup(
         logger.LogInformation("Scheduled daily price collection for {Count} shops ({Cron} UTC)",
             shops.Count(s => s.Enabled), options.Value.DailyCron);
 
+        var watched = options.Value.Shops.Where(s => s.WatchInBrowser).Select(s => s.Key).ToList();
+        if (watched.Count == 0)
+        {
+            recurringJobs.RemoveIfExists(WatchPagesJob.RecurringJobId);
+        }
+        else
+        {
+            recurringJobs.AddOrUpdate<WatchPagesJob>(
+                WatchPagesJob.RecurringJobId,
+                job => job.RunAsync(CancellationToken.None),
+                options.Value.Watch.Cron,
+                new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
+            logger.LogInformation("Scheduled watched pages in the browser for {Shops} ({Cron} UTC)", string.Join(", ", watched), options.Value.Watch.Cron);
+        }
+
         var newsletters = newsletterOptions.Value;
         if (string.IsNullOrWhiteSpace(newsletters.Imap.Host))
         {

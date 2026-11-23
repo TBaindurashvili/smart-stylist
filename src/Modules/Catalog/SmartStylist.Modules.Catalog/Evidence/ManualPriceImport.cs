@@ -11,7 +11,7 @@ public sealed record ManualImportResult(int Rows, int PricesAdded, IReadOnlyList
 /// <summary>
 /// Imports dated prices written down elsewhere, such as the stylist's Recommended and near-miss tables.
 /// CSV with a header row: date, url, price are required; title, shop, currency, list_price, size, colour are optional.
-/// Stored as outside evidence (PriceSource.Manual).
+/// Stored as outside evidence (PriceSource.ManualHistory).
 /// </summary>
 public sealed class ManualPriceImport
 {
@@ -95,7 +95,7 @@ public sealed class ManualPriceImport
             var product = await OutsideEvidenceWriter.FindOrAddProductAsync(_db, shop, url.ToString(), Get("title"), now, cancellationToken);
             added += await OutsideEvidenceWriter.AddAsync(_db, product, day,
                 [new ScrapedOffer(variant, size, price.Value, listPrice > price ? listPrice : null, currency, null, colour)],
-                shop.Currency, PriceSource.Manual, now, cancellationToken);
+                shop.Currency, PriceSource.ManualHistory, now, cancellationToken);
         }
 
         return new ManualImportResult(rows, added, skipped);

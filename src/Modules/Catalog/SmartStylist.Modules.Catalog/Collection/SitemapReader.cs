@@ -23,8 +23,19 @@ internal sealed partial class SitemapReader(ILogger<SitemapReader> logger)
         CancellationToken cancellationToken)
     {
         string? lastError = null;
+        string? blocked = null;
+        void Note(string error)
+        {
+            lastError = error;
+            // A block or geo redirect explains everything after it; a later 404 on a guessed sitemap must not hide it.
+            if (blocked is null && (error.Contains("Blocked by", StringComparison.Ordinal) || error.Contains("Geo redirect", StringComparison.Ordinal)))
+            {
+                blocked = error;
+            }
+        }
+
         var localeHints = Tokens(baseUrl.AbsolutePath);
-        var starting = await StartingSitemapsAsync(fetcher, shopRoot, sitemapUrl, error => lastError = error, cancellationToken);
+        var starting = await StartingSitemapsAsync(fetcher, shopRoot, sitemapUrl, Note, cancellationToken);
         var queue = new Queue<Uri>(Rank(starting.Select(u => u.ToString()), localeHints).Select(u => new Uri(u)));
         var visited = new HashSet<Uri>();
         var urls = new List<string>();
@@ -47,7 +58,7 @@ internal sealed partial class SitemapReader(ILogger<SitemapReader> logger)
             catch (Exception ex) when (ex is HttpRequestException or System.Xml.XmlException or InvalidDataException or TimeoutException or Microsoft.Playwright.PlaywrightException)
             {
                 logger.LogWarning("Could not read sitemap {Sitemap}: {Error}", sitemap, FirstLine(ex.Message));
-                lastError = $"sitemap {sitemap}: {FirstLine(ex.Message)}";
+                Note($"sitemap {sitemap}: {FirstLine(ex.Message)}");
                 continue;
             }
 
@@ -84,7 +95,7 @@ internal sealed partial class SitemapReader(ILogger<SitemapReader> logger)
             }
         }
 
-        return new SitemapResult(urls, lastError);
+        return new SitemapResult(urls, blocked ?? lastError);
     }
 
     internal static IEnumerable<string> PreferProductSitemaps(IReadOnlyList<string> locs)

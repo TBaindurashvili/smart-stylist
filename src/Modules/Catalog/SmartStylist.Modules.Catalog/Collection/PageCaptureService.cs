@@ -39,14 +39,20 @@ public sealed class PageCaptureService
 
     private readonly CatalogDbContext _db;
     private readonly TimeProvider _time;
+    private readonly PriceSanityOptions _sanity;
 
-    internal PageCaptureService(CatalogDbContext db, TimeProvider time)
+    internal PageCaptureService(CatalogDbContext db, TimeProvider time, PriceSanityOptions? sanity = null)
     {
         _db = db;
         _time = time;
+        _sanity = sanity ?? new PriceSanityOptions();
     }
 
-    public async Task<PageCaptureResult> CaptureAsync(PageCapture capture, CancellationToken cancellationToken)
+    public Task<PageCaptureResult> CaptureAsync(PageCapture capture, CancellationToken cancellationToken) =>
+        CaptureAsync(capture, PriceSource.Extension, cancellationToken);
+
+    /// <param name="source">Extension for pages the user opened; Crawl for watched pages the app opens in a real browser.</param>
+    public async Task<PageCaptureResult> CaptureAsync(PageCapture capture, PriceSource source, CancellationToken cancellationToken)
     {
         if (!Uri.TryCreate(capture.Url, UriKind.Absolute, out var url) || url.Scheme is not ("http" or "https"))
         {
@@ -61,12 +67,18 @@ public sealed class PageCaptureService
         }
 
         var scraped = JsonLdProductParser.Parse(capture.Html, url, shop.Currency);
+        if (scraped is not null)
+        {
+            var real = scraped.Offers.Where(o => PriceSanity.Check(o.Price, o.ListPrice, null, o.Currency, scraped.Title, _sanity) is null).ToList();
+            scraped = real.Count == 0 ? null : scraped with { Offers = real };
+        }
+
         if (scraped is null)
         {
             return new PageCaptureResult(PageCaptureStatus.NoPrice, shop.Name);
         }
 
-        var product = await SaveAsync(shop, scraped, cancellationToken);
+        var product = await SaveAsync(shop, scraped, source, cancellationToken);
 
         var cheapest = scraped.Offers.MinBy(o => o.Price)!;
         var daily = await _db.PriceSnapshots
@@ -87,7 +99,7 @@ public sealed class PageCaptureService
             scraped.Offers.Where(o => o.SizeLabel is not null).Select(o => new CapturedSize(o.SizeLabel!, o.Price, o.InStock)).ToList());
     }
 
-    private async Task<Product> SaveAsync(Shop shop, ScrapedProduct scraped, CancellationToken cancellationToken)
+    private async Task<Product> SaveAsync(Shop shop, ScrapedProduct scraped, PriceSource source, CancellationToken cancellationToken)
     {
         var now = _time.GetUtcNow();
         var today = DateOnly.FromDateTime(now.UtcDateTime);
@@ -128,7 +140,7 @@ public sealed class PageCaptureService
             snapshot.Currency = offer.Currency.Length == 3 ? offer.Currency : shop.Currency;
             snapshot.InStock = offer.InStock;
             snapshot.CapturedAt = now;
-            snapshot.Source = PriceSource.Extension;
+            snapshot.Source = source;
         }
 
         await _db.SaveChangesAsync(cancellationToken);

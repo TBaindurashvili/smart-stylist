@@ -13,4 +13,7 @@ public enum CollectorStrategy
 
     /// <summary>Same as <see cref="SitemapJsonLd"/>, but pages are rendered in a headless browser.</summary>
     BrowserJsonLd,
+
+    /// <summary>Uniqlo's own commerce API: every colour and size with price, promo price and stock.</summary>
+    UniqloApi,
 }

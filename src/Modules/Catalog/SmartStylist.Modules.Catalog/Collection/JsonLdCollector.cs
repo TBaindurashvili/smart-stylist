@@ -20,8 +20,12 @@ internal abstract class JsonLdCollector(
 
     public abstract CollectorStrategy Strategy { get; }
 
+    /// <summary>The fetcher for this shop. The plain-HTTP tier uses the shop's egress-aware fetcher when it has one.</summary>
+    protected virtual IPageFetcher FetcherFor(ShopRequest request) => fetcher;
+
     public virtual async Task<CollectorResult> CollectAsync(ShopRequest request, CancellationToken cancellationToken)
     {
+        var pages = FetcherFor(request);
         var pattern = string.IsNullOrWhiteSpace(request.ProductUrlPattern)
             ? null
             : new Regex(request.ProductUrlPattern, RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
@@ -31,7 +35,7 @@ internal abstract class JsonLdCollector(
         if (urls.Count < request.MaxProducts)
         {
             var fromSitemap = await sitemapReader.GetProductUrlsAsync(
-                fetcher, request.ShopRoot, request.BaseUrl, request.SitemapUrl, pattern, request.MaxProducts * 2, cancellationToken);
+                pages, request.ShopRoot, request.BaseUrl, request.SitemapUrl, pattern, request.MaxProducts * 2, cancellationToken);
             var known = new HashSet<string>(urls, StringComparer.OrdinalIgnoreCase);
             urls.AddRange(fromSitemap.Urls.Where(known.Add).Take(request.MaxProducts - urls.Count));
             sitemapError = fromSitemap.LastError;
@@ -56,7 +60,7 @@ internal abstract class JsonLdCollector(
 
             try
             {
-                var html = await fetcher.GetPageAsync(new Uri(url), cancellationToken);
+                var html = await pages.GetPageAsync(new Uri(url), cancellationToken);
                 var product = JsonLdProductParser.Parse(html, new Uri(url), request.Currency);
                 if (product is { Offers.Count: > 0 })
                 {
@@ -76,7 +80,7 @@ internal abstract class JsonLdCollector(
                 logger.LogDebug("Failed {Url}: {Error}", url, lastError);
             }
 
-            await Task.Delay(options.Value.RequestDelayMs, cancellationToken);
+            await Task.Delay(Math.Max(request.DelayMs, options.Value.RequestDelayMs), cancellationToken);
         }
 
         if (products.Count == 0)
@@ -96,6 +100,8 @@ internal sealed class SitemapJsonLdCollector(
     ILogger<SitemapJsonLdCollector> logger) : JsonLdCollector(fetcher, sitemapReader, options, logger)
 {
     public override CollectorStrategy Strategy => CollectorStrategy.SitemapJsonLd;
+
+    protected override IPageFetcher FetcherFor(ShopRequest request) => request.Http ?? fetcher;
 }
 
 internal sealed class BrowserJsonLdCollector(

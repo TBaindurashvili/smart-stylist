@@ -33,6 +33,12 @@ internal sealed class HttpPageFetcher(HttpClient httpClient) : IPageFetcher
             response = await httpClient.GetAsync(url, cancellationToken);
         }
 
+        if (response.RequestMessage?.RequestUri is { } landed && GeoRedirectException.IsGeoRedirect(url, landed))
+        {
+            response.Dispose();
+            throw new GeoRedirectException(url, landed);
+        }
+
         if (response.IsSuccessStatusCode)
         {
             return response;

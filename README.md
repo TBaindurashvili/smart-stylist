@@ -56,7 +56,43 @@ Each shop is tried with the cheapest source first, and the one that works is rem
 1. **Shopify**: the public `/products.json` feed. Every product and size, with the "compare at" price. Cleanest data.
 2. **SitemapJsonLd**: product URLs from `robots.txt` → sitemaps, then the schema.org JSON-LD (or Open Graph
    price tags) on each product page, over plain HTTP. Most big shops publish this for Google Shopping.
-3. **BrowserJsonLd**: the same, but pages are opened in headless Chromium, for shops that block plain HTTP clients.
+3. **BrowserJsonLd**: the same, but pages are opened in a browser. No longer tried automatically: only shops
+   configured with `"Strategy": "BrowserJsonLd"` use it. Shops that only answer a real browser (J.Crew, lululemon)
+   use watched pages instead (below).
+4. **UniqloApi**: Uniqlo's commerce API (`/us/api/commerce/v5/en/products/<ID>-000/price-groups/00/l2s?withPrices=true&withStocks=true`),
+   every colour and size (002=XS ... 005=L, 006=XL, 008=3XL) with base price, promo price and stock. The page's own
+   data carries $1.90 placeholders, so it is not used for Uniqlo.
+
+**Price sanity check.** Before a price is stored (collectors, extension, watched pages, outside evidence) it is
+rejected when it is under 15% of the SKU's compare-at price or usual (90-day median) price, or under the floor for
+its kind of item (`Catalog:PriceSanity`, e.g. jeans $15, sweater/merino $12, boots $30; matched in the title).
+Rejected prices are counted in the run's error line.
+
+### Geo blocks: a US egress
+
+Some shops block or redirect visitors from Georgia rather than bots: Kohl's, Levi's and brooksbrothers.com load
+fine from a US IP, while from Georgia they answer "Access Denied" or send you to brooksbrothers.eu. Shops with
+`"Egress": "us"` try the home connection first; on a geo redirect (same shop name on another country domain, or
+`/US/` → `/GE/`) or a block page they switch to the `us` egress for the rest of the run, at
+`Catalog:Egress:us:MinDelayMs` (6 s) between requests. Only those shops use it.
+
+The egress is an HTTP proxy in the US, e.g. a $4-6/month VPS running tinyproxy or squid that only accepts your
+home IP. Put its address in user-secrets:
+
+```bash
+dotnet user-secrets set "Catalog:Egress:us:ProxyUrl" "http://<vps-ip>:3128" --project src/SmartStylist.Worker
+dotnet user-secrets set "Catalog:Egress:us:Username" "<user>" --project src/SmartStylist.Worker   # if the proxy needs a login
+dotnet user-secrets set "Catalog:Egress:us:Password" "<password>" --project src/SmartStylist.Worker
+```
+
+Without a proxy, those shops fail with a line naming the setting to fill in.
+
+### Watched pages in a visible Chrome
+
+For shops with `"WatchInBrowser": true` (J.Crew and lululemon), the app opens only watched product pages in the
+browser set in `Catalog:Browser` (the visible Chrome below), `Catalog:Watch:Cron` = 3 times a day, 20 s apart,
+at most 15 per shop. Watched = the shop's `WatchUrls` plus every product you saved there with the extension.
+A bot-check or CAPTCHA page stops that shop for the run. Run it by hand with `-- watch jcrew`.
 
 ### Blocked shops and a real Chrome window
 
@@ -150,11 +186,13 @@ A new shop has to be added both to `Catalog:Shops` and to `matches` in `extensio
 A verdict normally needs 14 days of the app's own prices. To judge sales sooner (before Black Friday), seed
 history from prices the app did not see itself. They are stored with source `Archive` or `Manual`, never
 overwrite a price the app saw on the same day, and a verdict that leans on them says "Less certain" and shows
-a "less certain" tag on /deals. Outside evidence counts once it gives 3+ earlier days spread over 21+ days.
+a "less certain" tag on /deals. Outside evidence counts once it gives 3+ earlier days spread over 21+ days. Imported notes are stored with source
+`ManualHistory`.
 
 ```bash
 # Old copies of product pages from the Wayback Machine (archive.org), up to 12 per product, one request every 4 s.
-dotnet run --project src/SmartStylist.Worker -- wayback taylorstitch --limit 20      # a shop's products with < 14 days
+dotnet run --project src/SmartStylist.Worker -- wayback core                         # Catalog:CoreProducts, by exact URL
+dotnet run --project src/SmartStylist.Worker -- wayback taylorstitch --limit 20      # a shop's oldest products with < 14 days
 dotnet run --project src/SmartStylist.Worker -- wayback "https://www.jcrew.com/p/..."  # one page (added if new)
 
 # Dated prices written down elsewhere (e.g. the stylist's Recommended and near-miss tables).

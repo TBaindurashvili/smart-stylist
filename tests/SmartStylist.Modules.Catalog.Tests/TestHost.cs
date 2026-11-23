@@ -35,7 +35,10 @@ internal sealed class TestHost : IAsyncDisposable
     {
     }
 
-    private TestHost(string? postgres, ShopOptions[] shops)
+    /// <summary>A host with extra catalog settings, e.g. an egress.</summary>
+    public static TestHost With(Action<CatalogOptions> configure, params ShopOptions[] shops) => new(null, shops, configure);
+
+    private TestHost(string? postgres, ShopOptions[] shops, Action<CatalogOptions>? configure = null)
     {
         _postgres = postgres is not null;
 
@@ -47,6 +50,7 @@ internal sealed class TestHost : IAsyncDisposable
             o.ArchiveDelayMs = 0;
             o.MaxProductsPerShop = 50;
             o.Shops = [.. shops];
+            configure?.Invoke(o);
         });
         if (postgres is not null)
         {
@@ -156,6 +160,14 @@ internal sealed class FakeWeb : HttpMessageHandler
 
     public void Serve(string url, byte[] content) =>
         _routes[url] = () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) };
+
+    /// <summary>Answers as if the shop had redirected the visitor to <paramref name="landed"/>.</summary>
+    public void Redirect(string url, string landed, string content = "<html>other country</html>") =>
+        _routes[url] = () => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(content, System.Text.Encoding.UTF8, "text/html"),
+            RequestMessage = new HttpRequestMessage(HttpMethod.Get, landed),
+        };
 
     public void Serve(string url, HttpStatusCode status, string content, params (string Name, string Value)[] headers) =>
         _routes[url] = () =>
