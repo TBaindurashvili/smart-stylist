@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using SmartStylist.Modules.Catalog.Domain;
 using SmartStylist.Modules.Catalog.Persistence;
@@ -6,11 +7,11 @@ namespace SmartStylist.Modules.Catalog.Reporting;
 
 public enum DealVerdict
 {
-    /// <summary>Lowest price we have seen, well below the usual price.</summary>
-    BestPrice,
+    /// <summary>Never been this cheap, or a rare sale on an item that is usually full price.</summary>
+    BuyNow,
 
-    /// <summary>Clearly below the usual price, but it has been lower.</summary>
-    GoodPrice,
+    /// <summary>Below the usual price, but it has been cheaper before.</summary>
+    Wait,
 
     /// <summary>Not enough price history yet to judge the discount.</summary>
     StillLearning,
@@ -22,10 +23,25 @@ public enum DealVerdict
     UsualPrice,
 }
 
+/// <summary>One earlier day of a product: its lowest price that day and whether the shop showed a "was" price.</summary>
+/// <param name="Outside">Outside evidence (an archived page or a written-down price), not a price the app saw itself.</param>
+public sealed record PricePoint(DateOnly Day, decimal Price, bool OnSale, bool Outside = false);
+
 /// <summary>A price judged against the product's own history.</summary>
 /// <param name="ClaimedDiscount">What the shop's crossed-out price says, 0.3 = 30% off.</param>
 /// <param name="RealDiscount">Below the usual (median) price of earlier days; null while there is too little history.</param>
-public sealed record DealAssessment(DealVerdict Verdict, decimal? ClaimedDiscount, decimal? RealDiscount, decimal? UsualPrice, decimal? LowestBefore, int Days);
+/// <param name="Reason">One line: buy now or wait, and why.</param>
+/// <param name="LowConfidence">The verdict leans on outside evidence because the app has under two weeks of its own prices.</param>
+public sealed record DealAssessment(
+    DealVerdict Verdict,
+    string Reason,
+    decimal? ClaimedDiscount,
+    decimal? RealDiscount,
+    decimal? UsualPrice,
+    decimal? LowestBefore,
+    DateOnly? LowestOn,
+    int Days,
+    bool LowConfidence = false);
 
 public sealed record DealRow(
     long ProductId,
@@ -42,40 +58,87 @@ public sealed record DealRow(
     DealAssessment Assessment);
 
 /// <summary>
-/// The deals worth a look: recent prices that are on sale or below their usual price, each with a verdict on
-/// whether the discount is real. "Usual" is the median of the product's daily lowest price on earlier days.
+/// The deals worth a look, judged by Temo's price rule instead of a percentage:
+/// "When something usually isn't on sale and has never been cheaper, select it."
+/// Buy now when the price is the lowest seen, or when an item that is rarely discounted is below its usual price.
+/// Wait when it has been cheaper before. "Usual" is the median of the daily lowest price on earlier days.
 /// </summary>
 public sealed class DealsReport(CatalogDbContext db, TimeProvider time)
 {
     /// <summary>Days of earlier prices needed before a verdict, about two weeks of daily prices.</summary>
     public const int MinHistoryDays = 14;
 
-    public const decimal BestPriceDiscount = 0.15m;
+    /// <summary>
+    /// Outside evidence is enough for a first, less certain verdict when it gives at least this many earlier days
+    /// spread over at least <see cref="MinOutsideSpanDays"/> days.
+    /// </summary>
+    public const int MinOutsideDays = 3;
 
-    public const decimal GoodPriceDiscount = 0.10m;
+    public const int MinOutsideSpanDays = 21;
+
+    /// <summary>An item on sale on fewer than this share of earlier days is "usually not on sale".</summary>
+    public const decimal RarelyOnSaleShare = 0.2m;
 
     /// <summary>Only prices seen this recently are shown; older ones may have ended.</summary>
     public const int RecentDays = 14;
 
-    private const int HistoryDays = 180;
+    private const int HistoryDays = 365;
 
-    public static DealAssessment Assess(IReadOnlyList<decimal> earlierDailyLows, decimal price, decimal? listPrice)
+    public static DealAssessment Assess(IReadOnlyList<PricePoint> earlier, decimal price, decimal? listPrice, string currency = "")
     {
         decimal? claimed = listPrice > price ? Math.Round((listPrice.Value - price) / listPrice.Value, 4) : null;
-        var days = earlierDailyLows.Count + 1;
-        if (earlierDailyLows.Count < MinHistoryDays)
+        var days = earlier.Count + 1;
+        var ownDays = earlier.Count(p => !p.Outside);
+        var outsideDays = earlier.Count - ownDays;
+        var span = earlier.Count == 0 ? 0 : earlier.Max(p => p.Day).DayNumber - earlier.Min(p => p.Day).DayNumber;
+        var lowConfidence = ownDays < MinHistoryDays;
+        if (lowConfidence && (outsideDays == 0 || earlier.Count < MinOutsideDays || span < MinOutsideSpanDays))
         {
-            return new DealAssessment(DealVerdict.StillLearning, claimed, null, null, null, days);
+            return new DealAssessment(DealVerdict.StillLearning,
+                $"Only {days} day(s) of prices so far, so it's too early to say whether this sale is real.",
+                claimed, null, null, null, null, days);
         }
 
-        var usual = Median(earlierDailyLows);
-        var lowest = earlierDailyLows.Min();
+        var usual = Median(earlier.Select(p => p.Price).ToList());
+        var lowestPoint = earlier.OrderBy(p => p.Price).ThenByDescending(p => p.Day).First();
+        var lowest = lowestPoint.Price;
         var real = usual <= 0 ? 0 : Math.Round((usual - price) / usual, 4);
-        var verdict = real >= BestPriceDiscount && price <= lowest ? DealVerdict.BestPrice
-            : real >= GoodPriceDiscount ? DealVerdict.GoodPrice
-            : claimed is not null ? DealVerdict.FakeSale
-            : DealVerdict.UsualPrice;
-        return new DealAssessment(verdict, claimed, real, usual, lowest, days);
+        var saleDays = earlier.Count(p => p.OnSale || p.Price < usual);
+        var rarelyOnSale = (decimal)saleDays / earlier.Count < RarelyOnSaleShare;
+
+        string Money(decimal amount) => string.Create(CultureInfo.InvariantCulture, $"{amount:0.00} {currency}").TrimEnd();
+        string Day(DateOnly day) => day.ToString("MMM d", CultureInfo.InvariantCulture);
+
+        DealAssessment Result(DealVerdict verdict, string reason) =>
+            new(verdict, lowConfidence ? $"{reason} Less certain: {outsideDays} of {earlier.Count} earlier days are outside evidence (archived pages or notes)." : reason,
+                claimed, real, usual, lowest, lowestPoint.Day, days, lowConfidence);
+
+        if (price < usual && price <= lowest)
+        {
+            return Result(DealVerdict.BuyNow, price < lowest
+                ? $"Buy now: never been this cheap in {days} days (lowest before {Money(lowest)}, usually {Money(usual)})."
+                : $"Buy now: matches its lowest price in {days} days (usually {Money(usual)}).");
+        }
+
+        if (price < usual && rarelyOnSale)
+        {
+            return Result(DealVerdict.BuyNow,
+                $"Buy now: rarely discounted (on sale {saleDays} of {earlier.Count} days) and below its usual {Money(usual)}. It was {Money(lowest)} on {Day(lowestPoint.Day)}.");
+        }
+
+        if (price < usual)
+        {
+            return Result(DealVerdict.Wait,
+                $"Wait: it was {Money(lowest)} on {Day(lowestPoint.Day)}, so a lower price is likely to come back.");
+        }
+
+        if (claimed is not null)
+        {
+            return Result(DealVerdict.FakeSale,
+                $"Skip: the crossed-out price is not real, it usually costs {Money(usual)}.");
+        }
+
+        return Result(DealVerdict.UsualPrice, $"Its usual price ({Money(usual)}).");
     }
 
     public async Task<IReadOnlyList<DealRow>> BuildAsync(CancellationToken cancellationToken)
@@ -104,10 +167,11 @@ public sealed class DealsReport(CatalogDbContext db, TimeProvider time)
             var earlier = p.Snapshots
                 .Where(s => s.ObservedOn < lastDay && s.Currency == latest.Currency)
                 .GroupBy(s => s.ObservedOn)
-                .Select(g => g.Min(s => s.Price))
+                .Select(g => g.MinBy(s => s.Price)!)
+                .Select(s => new PricePoint(s.ObservedOn, s.Price, s.ListPrice > s.Price, s.Source.IsOutsideEvidence()))
                 .ToList();
 
-            var assessment = Assess(earlier, latest.Price, latest.ListPrice);
+            var assessment = Assess(earlier, latest.Price, latest.ListPrice, latest.Currency);
             if (assessment.Verdict == DealVerdict.UsualPrice
                 || (assessment.Verdict == DealVerdict.StillLearning && assessment.ClaimedDiscount is null))
             {

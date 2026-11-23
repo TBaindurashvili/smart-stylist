@@ -30,7 +30,10 @@ public sealed record ShopQuality(
     double OnSaleShare,
     int DaysOfHistory,
     int ProductsWithPriceChange,
-    DataGrade Grade);
+    DataGrade Grade,
+    ShopPlatform? Platform = null,
+    bool? AcceptsForwarder = null,
+    string? CheckoutNote = null);
 
 /// <summary>
 /// Answers the M0 question: which shops give us clean daily price data, and which need more work.
@@ -90,7 +93,10 @@ public sealed class DataQualityReport(CatalogDbContext db)
                 OnSaleShare: Share(latest.Count(s => s.OnSale)),
                 DaysOfHistory: days,
                 ProductsWithPriceChange: changed,
-                Grade: Grade(lastRun, successRate, sizeCoverage)));
+                Grade: Grade(lastRun, successRate, sizeCoverage),
+                Platform: shop.Platform,
+                AcceptsForwarder: shop.AcceptsForwarder,
+                CheckoutNote: shop.CheckoutNote));
         }
 
         return rows;

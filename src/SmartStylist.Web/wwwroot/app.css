@@ -71,7 +71,24 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 
 button.pill { border: 1px solid transparent; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
 button.pill.selected { border-color: var(--ink); }
-.verdict-bestprice { background: #DCEFE6; color: var(--accent); }
-.verdict-goodprice { background: #EAF1DA; color: #4E6B17; }
+.verdict-buynow { background: #DCEFE6; color: var(--accent); }
+.verdict-wait { background: #F6E7CC; color: var(--warn); }
+.reason { font-size: 13px; margin-top: 4px; max-width: 46ch; }
 .verdict-stilllearning { background: var(--line); color: var(--muted); }
 .verdict-fakesale { background: #F4D9D6; color: var(--bad); }
+
+h2 { font-size: 16px; margin: 0 0 8px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 16px 0; }
+.form-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; align-items: center; }
+.form-row input, .form-row select { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); min-width: 0; flex: 1 1 140px; }
+.form-row input.wide { flex: 3 1 300px; }
+.form-row .check { display: flex; gap: 4px; align-items: center; font-size: 13px; }
+.form-row .check input { flex: none; }
+button.primary { font: inherit; padding: 6px 16px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; }
+button.primary:disabled { opacity: .4; cursor: default; }
+button.link { font: inherit; font-size: 13px; border: 0; background: none; color: var(--bad); cursor: pointer; padding: 0; }
+.advice { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0 0; }
+.confidence-high, .fit-perfect { background: #DCEFE6; color: var(--accent); }
+.confidence-medium, .fit-snug, .fit-roomy { background: #EAF1DA; color: #4E6B17; }
+.confidence-low, .fit-toosmall, .fit-toobig { background: #F6E7CC; color: var(--warn); }
+.size-hint { font-size: 12px; margin-top: 2px; }

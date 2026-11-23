@@ -39,6 +39,9 @@ public sealed class ImapOptions
     /// <summary>An app password, never the account password. Keep it in user-secrets, not appsettings.json.</summary>
     public string? Password { get; set; }
 
-    /// <summary>Folder or Gmail label holding the sale emails, e.g. "Sales".</summary>
-    public string Folder { get; set; } = "INBOX";
+    /// <summary>
+    /// Folder or Gmail label holding the sale emails. Gmail's "[Gmail]/All Mail" also has the emails the stylist routine
+    /// labelled and archived; a label such as "Stylist/Reviewed" reads just those. Already-read emails are skipped by Message-ID.
+    /// </summary>
+    public string Folder { get; set; } = "[Gmail]/All Mail";
 }

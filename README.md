@@ -10,6 +10,7 @@ Real-discount verdicts need about 30 days of price history, so this runs first.
 | Part | What it does |
 | --- | --- |
 | `src/Modules/Catalog` | The Catalog module: shops, products, daily price snapshots, collectors, the data-quality report. |
+| `src/Modules/Wardrobe` | The Wardrobe module: the fit ledger and size advice. |
 | `src/SmartStylist.Worker` | Background host. Runs Hangfire and one daily price job per shop. Also a small CLI (`collect`, `report`). |
 | `src/SmartStylist.Web` | Blazor web app. Today it shows the data-quality page and the Hangfire dashboard. |
 | `tests/` | Parser tests with fixture pages and end-to-end collection tests against in-memory SQLite. |
@@ -31,7 +32,7 @@ If port 5432 is taken, start Postgres with `POSTGRES_PORT=5433 docker compose up
 `POSTGRES_PORT=5433` when you run the worker and the web app; both apps read it and no JSON edit is needed.
 
 The **Deals** page (`/deals`) lists recent prices that are on sale or below their usual price, with a verdict:
-best price, good price, fake sale (the "was" price is fiction), or still learning (under 14 days of history).
+buy now (never been cheaper, or a rare sale on an item usually at full price), wait (it has been cheaper), fake sale (the "was" price is fiction), or still learning (under 14 days of history). No percentage thresholds: the history decides.
 
 That run takes roughly 10 to 20 minutes for all 15 shops, because the collector waits 1.5 s between pages.
 It applies database migrations itself.
@@ -41,6 +42,7 @@ Other commands:
 ```bash
 dotnet run --project src/SmartStylist.Worker -- collect levis uniqlo   # only some shops (full 300 products)
 dotnet run --project src/SmartStylist.Worker -- report                 # print the report again
+dotnet run --project src/SmartStylist.Worker -- detect [shop ...]                 # find each shop's platform (Shopify, Salesforce, Magento, Next.js...)
 dotnet run --project src/SmartStylist.Worker -- probe <product url> [--browser]   # what the parser reads from one page; saves the HTML
 dotnet run --project src/SmartStylist.Worker -- newsletters [--folder <dir>]           # price new sale emails (mailbox, or saved .eml files)
 dotnet run --project src/SmartStylist.Worker                           # leave running: collects every shop daily at 05:00 UTC
@@ -55,6 +57,25 @@ Each shop is tried with the cheapest source first, and the one that works is rem
 2. **SitemapJsonLd**: product URLs from `robots.txt` → sitemaps, then the schema.org JSON-LD (or Open Graph
    price tags) on each product page, over plain HTTP. Most big shops publish this for Google Shopping.
 3. **BrowserJsonLd**: the same, but pages are opened in headless Chromium, for shops that block plain HTTP clients.
+
+### Blocked shops and a real Chrome window
+
+When a shop answers with a bot-protection page, the collectors, `probe` and `detect` say who blocked it
+(Akamai, Cloudflare, PerimeterX, DataDome, Imperva, Kasada...) and stop. The app never solves a challenge or
+CAPTCHA, never logs in and never checks out. To try a shop the way a person would, from the home connection,
+drive the installed Google Chrome in a visible window with a profile kept between runs, at a slow pace:
+
+```bash
+dotnet user-secrets set "Catalog:Browser:Channel" "chrome" --project src/SmartStylist.Worker
+dotnet user-secrets set "Catalog:Browser:Headless" "false" --project src/SmartStylist.Worker
+dotnet user-secrets set "Catalog:Browser:UserDataDir" "$HOME/.smart-stylist-chrome" --project src/SmartStylist.Worker
+dotnet user-secrets set "Catalog:RequestDelayMs" "6000" --project src/SmartStylist.Worker
+dotnet run --project src/SmartStylist.Worker -- probe "https://www.levi.com/US/en_US/.../p/045415" --browser
+```
+
+Use a separate profile folder, not your everyday Chrome profile: Chrome locks a profile while it is open.
+The user agent and fingerprint are left as Chrome reports them; faking them is the aggressive evasion this app
+stays away from. A shop that still blocks a real Chrome is a job for an affiliate feed, sale emails or the extension.
 
 Up to 300 products per shop are priced each day (`Catalog:MaxProductsPerShop`). Products priced in the last
 week are revisited first, so the same items build a continuous history. One price is stored per product size
@@ -124,6 +145,47 @@ the `extension` folder. Nothing is saved while the app is off; the toolbar icon 
 
 A new shop has to be added both to `Catalog:Shops` and to `matches` in `extension/manifest.json`.
 
+## Outside evidence: history before two weeks
+
+A verdict normally needs 14 days of the app's own prices. To judge sales sooner (before Black Friday), seed
+history from prices the app did not see itself. They are stored with source `Archive` or `Manual`, never
+overwrite a price the app saw on the same day, and a verdict that leans on them says "Less certain" and shows
+a "less certain" tag on /deals. Outside evidence counts once it gives 3+ earlier days spread over 21+ days.
+
+```bash
+# Old copies of product pages from the Wayback Machine (archive.org), up to 12 per product, one request every 4 s.
+dotnet run --project src/SmartStylist.Worker -- wayback taylorstitch --limit 20      # a shop's products with < 14 days
+dotnet run --project src/SmartStylist.Worker -- wayback "https://www.jcrew.com/p/..."  # one page (added if new)
+
+# Dated prices written down elsewhere (e.g. the stylist's Recommended and near-miss tables).
+dotnet run --project src/SmartStylist.Worker -- import-prices prices.csv
+```
+
+The CSV needs a header with `date`, `url` and `price`; `title`, `shop`, `currency`, `list_price`, `size` and
+`colour` are optional. Dates like `2026-10-14` or `Oct 14 2026`. Keepa covers Amazon price history but needs a paid
+API key, so it is not wired in.
+
+## Price-history API
+
+The web app serves the numbers the stylist layer needs:
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /api/products/{id}/history?colour=&size=` | Current price, all-time low (and when), 90-day low, median, how many days at each price level, and the daily series. |
+| `GET /api/drops?since=2026-11-20&sizes=M,L,32` | SKUs (colour + size) that hit a new low or came back in stock since that day; `sizes` keeps only yours. |
+
+Page reading tries, in order: schema.org JSON-LD, microdata, the app state the page embeds (`__NEXT_DATA__`,
+`__INITIAL_STATE__`, `__PRELOADED_STATE__`, JSON `__NUXT__`), then Open Graph tags. Each price is stored per SKU:
+product + colour + size. Shops in `Catalog:Shops` can carry `AcceptsForwarder`, `AcceptsForeignCard` and `CheckoutNote`,
+learned from real orders; the data-quality page shows them with the detected platform.
+
+## Fit ledger
+
+The **Fit** page (`/fit`) records how each item fitted after delivery: brand, model, kind of item, size, and
+too small / snug / perfect / roomy / too big. "Which size should I buy?" answers from these records: the same model
+first, then the same kind of item from the brand, then the brand. The Deals page shows "Your size" next to brands
+you have records for. Records live in the `wardrobe` schema (Wardrobe module), created by the worker or the web app on start.
+
 ## Prices from Awin product feeds
 
 Awin (publisher id 3156285) gives each programme you join a daily product feed with prices, "was" prices and sizes.
@@ -184,15 +246,15 @@ folder, then:
 dotnet run --project src/SmartStylist.Worker -- newsletters --folder ~/sale-emails
 ```
 
-To read a mailbox every hour, fill in `Newsletters:Imap` and set the password as a secret. For Gmail, make a
-label (e.g. `Sales`) with a filter that applies it to shop emails, and create an app password
+To read a mailbox every hour, fill in `Newsletters:Imap` and set the password as a secret. The default folder is
+Gmail's `[Gmail]/All Mail`, so emails that a filter or the stylist routine labelled and archived (e.g.
+`Stylist/Reviewed`) are read too; set `Imap:Folder` to one label to read only that. Create an app password
 (Google account → Security → 2-Step Verification → App passwords):
 
 ```bash
 dotnet user-secrets set "Newsletters:Imap:Host" "imap.gmail.com" --project src/SmartStylist.Worker
 dotnet user-secrets set "Newsletters:Imap:Username" "you@gmail.com" --project src/SmartStylist.Worker
 dotnet user-secrets set "Newsletters:Imap:Password" "<app password>" --project src/SmartStylist.Worker
-dotnet user-secrets set "Newsletters:Imap:Folder" "Sales" --project src/SmartStylist.Worker
 dotnet run --project src/SmartStylist.Worker -- newsletters
 ```
 

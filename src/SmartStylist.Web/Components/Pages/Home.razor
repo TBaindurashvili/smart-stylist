@@ -30,7 +30,7 @@ else
         <table>
             <thead>
                 <tr>
-                    <th>Shop</th><th>Grade</th><th>Source</th><th class="num">Products</th><th class="num">Pages ok</th>
+                    <th>Shop</th><th>Grade</th><th>Platform</th><th>Forwarder</th><th>Source</th><th class="num">Products</th><th class="num">Pages ok</th>
                     <th class="num">Sizes</th><th class="num">Stock</th><th class="num">On sale</th><th class="num">Days</th>
                     <th class="num">Price moved</th><th>Last run</th>
                 </tr>
@@ -41,6 +41,8 @@ else
                     <tr>
                         <td><a href="shops/@row.ShopKey">@row.ShopName</a>@if (!row.Enabled) { <span class="muted"> (off)</span> }</td>
                         <td><span class="pill grade-@row.Grade.ToString().ToLowerInvariant()">@row.Grade</span></td>
+                        <td>@(row.Platform?.ToString() ?? "–")</td>
+                        <td title="@row.CheckoutNote">@(row.AcceptsForwarder switch { true => "works", false => "cancels", _ => "?" })</td>
                         <td>@(row.Strategy?.ToString() ?? "–")</td>
                         <td class="num">@row.ProductsTracked</td>
                         <td class="num">@row.PageSuccessRate.ToString("P0")</td>

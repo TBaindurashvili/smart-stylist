@@ -47,7 +47,9 @@ internal static class JsonLdProductParser
             }
         }
 
+        // Embedded app state before Open Graph tags: it usually has every size, the tags only one price.
         return ParseMicrodata(document, productUrl, fallbackCurrency)
+            ?? EmbeddedStateParser.Parse(html, productUrl, fallbackCurrency)
             ?? ParseMetaTags(document, productUrl, fallbackCurrency);
     }
 
@@ -162,7 +164,16 @@ internal static class JsonLdProductParser
                 var size = SizeText(variant);
                 if (variant.TryGetProperty("offers", out var variantOffers))
                 {
+                    var before = offers.Count;
                     AddOffers(variantOffers, variantKey, size, fallbackCurrency, offers);
+                    if (Text(variant, "color") is { } colour)
+                    {
+                        // Per-colour prices differ inside one product: keep the colour on each SKU.
+                        for (var i = before; i < offers.Count; i++)
+                        {
+                            offers[i] = offers[i] with { Colour = colour };
+                        }
+                    }
                 }
             }
         }
@@ -170,6 +181,13 @@ internal static class JsonLdProductParser
         if (offers.Count == 0 && node.TryGetProperty("offers", out var productOffers))
         {
             AddOffers(productOffers, Text(node, "sku"), SizeText(node), fallbackCurrency, offers);
+            if (Text(node, "color") is { } colour)
+            {
+                for (var i = 0; i < offers.Count; i++)
+                {
+                    offers[i] = offers[i] with { Colour = colour };
+                }
+            }
         }
 
         var externalId = Text(node, "productGroupID") ?? Text(node, "productID") ?? Text(node, "sku")

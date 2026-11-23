@@ -30,6 +30,9 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             shop.Property(s => s.Currency).HasMaxLength(3).IsFixedLength();
             shop.Property(s => s.ConfiguredStrategy).HasConversion<string>().HasMaxLength(32);
             shop.Property(s => s.DetectedStrategy).HasConversion<string>().HasMaxLength(32);
+            shop.Property(s => s.Platform).HasConversion<string>().HasMaxLength(32);
+            shop.Property(s => s.PlatformEvidence).HasMaxLength(200);
+            shop.Property(s => s.CheckoutNote).HasMaxLength(1000);
         });
 
         modelBuilder.Entity<Product>(product =>
@@ -49,6 +52,7 @@ public sealed class CatalogDbContext(DbContextOptions<CatalogDbContext> options)
             snapshot.HasIndex(s => s.ObservedOn);
             snapshot.Property(s => s.VariantKey).HasMaxLength(200);
             snapshot.Property(s => s.SizeLabel).HasMaxLength(100);
+            snapshot.Property(s => s.Colour).HasMaxLength(100);
             snapshot.Property(s => s.Price).HasPrecision(12, 2);
             snapshot.Property(s => s.ListPrice).HasPrecision(12, 2);
             snapshot.Property(s => s.Currency).HasMaxLength(3).IsFixedLength();

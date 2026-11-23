@@ -32,6 +32,9 @@ public sealed class ShopCatalogSync(CatalogDbContext db, IOptions<CatalogOptions
             shop.Currency = config.Currency.ToUpperInvariant();
             shop.ConfiguredStrategy = config.Strategy;
             shop.Enabled = config.Enabled;
+            shop.AcceptsForwarder = config.AcceptsForwarder;
+            shop.AcceptsForeignCard = config.AcceptsForeignCard;
+            shop.CheckoutNote = config.CheckoutNote;
         }
 
         var configuredKeys = configured.Select(c => c.Key).ToHashSet();

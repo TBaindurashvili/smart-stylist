@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SmartStylist.Modules.Catalog.Affiliates;
 using SmartStylist.Modules.Catalog.Collection;
+using SmartStylist.Modules.Catalog.Evidence;
 using SmartStylist.Modules.Catalog.Newsletters;
 using SmartStylist.Modules.Catalog.Persistence;
 using SmartStylist.Modules.Catalog.Reporting;
@@ -85,8 +86,10 @@ public static class CatalogModule
             sp.GetRequiredService<CatalogDbContext>(),
             sp.GetRequiredService<TimeProvider>()));
         services.AddScoped<CollectPricesJob>();
+        services.AddScoped<PlatformDetector>();
         services.AddScoped<DataQualityReport>();
         services.AddScoped<DealsReport>();
+        services.AddScoped<PriceHistoryService>();
         services.AddSingleton(TimeProvider.System);
 
         services.AddHttpClient<ILinkResolver, LinkResolver>(LinkResolver.ClientName, (sp, client) =>
@@ -108,6 +111,19 @@ public static class CatalogModule
 
         services.AddHttpClient<AwinFeedImportService>(AwinFeedImportService.ClientName, client => client.Timeout = TimeSpan.FromMinutes(10));
         services.AddScoped<ImportAwinFeedsJob>();
+
+        services.AddHttpClient(WaybackSeedService.ClientName, (sp, client) =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(60);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("SmartStylist/1.0 (personal price history)");
+        });
+        services.AddScoped(sp => new WaybackSeedService(
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient(WaybackSeedService.ClientName),
+            sp.GetRequiredService<CatalogDbContext>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<IOptions<CatalogOptions>>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<WaybackSeedService>>()));
+        services.AddScoped(sp => new ManualPriceImport(sp.GetRequiredService<CatalogDbContext>(), sp.GetRequiredService<TimeProvider>()));
         return services;
     }
 }

@@ -162,6 +162,7 @@ public sealed class AwinFeedImportService(
                 }
 
                 snapshot.SizeLabel = offer.SizeLabel is null ? null : Truncate(offer.SizeLabel, 100);
+                snapshot.Colour = offer.Colour is null ? null : Truncate(offer.Colour, 100);
                 snapshot.Price = offer.Price;
                 snapshot.ListPrice = offer.ListPrice;
                 snapshot.Currency = offer.Currency.Length == 3 ? offer.Currency : shop.Currency;

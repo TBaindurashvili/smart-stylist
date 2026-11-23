@@ -33,17 +33,29 @@ internal sealed class HttpPageFetcher(HttpClient httpClient) : IPageFetcher
             response = await httpClient.GetAsync(url, cancellationToken);
         }
 
-        try
+        if (response.IsSuccessStatusCode)
         {
+            return response;
+        }
+
+        using (response)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            var vendor = BotWall.Detect((int)response.StatusCode, Headers(response), body);
+            if (vendor is not null)
+            {
+                throw new BlockedByBotWallException(vendor, (int)response.StatusCode, url);
+            }
+
             response.EnsureSuccessStatusCode();
             return response;
         }
-        catch
-        {
-            response.Dispose();
-            throw;
-        }
     }
+
+    private static Dictionary<string, string> Headers(HttpResponseMessage response) =>
+        response.Headers.Concat(response.Content.Headers)
+            .GroupBy(h => h.Key, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => string.Join(", ", g.First().Value), StringComparer.OrdinalIgnoreCase);
 
     private static TimeSpan? RetryAfter(HttpResponseMessage response) =>
         response.Headers.RetryAfter switch
