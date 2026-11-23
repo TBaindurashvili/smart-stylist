@@ -124,6 +124,22 @@ the `extension` folder. Nothing is saved while the app is off; the toolbar icon 
 
 A new shop has to be added both to `Catalog:Shops` and to `matches` in `extension/manifest.json`.
 
+## Prices from Awin product feeds
+
+Awin (publisher id 3156285) gives each programme you join a daily product feed with prices, "was" prices and sizes.
+Get the feed API key in Awin under **Toolbox → Create-a-Feed**, then:
+
+```bash
+dotnet user-secrets set "Awin:ApiKey" "<key>" --project src/SmartStylist.Worker
+dotnet run --project src/SmartStylist.Worker -- awin-feeds   # which feeds exist and which programmes accepted you
+dotnet run --project src/SmartStylist.Worker -- awin         # import today's prices from every joined programme
+```
+
+With the key set, the worker also imports daily on `Awin:Cron` (06:00 UTC). `Awin:FeedIds` limits the import to
+some feeds; empty means every joined programme. Up to `Awin:MaxProductsPerFeed` (5000) products per feed are saved.
+Each advertiser gets its own shop, `awin-<advertiser id>` (no crawler runs for it), unless a shop in `Catalog:Shops`
+has a matching `"AwinAdvertiserId"`. Feed prices show on the Deals page as "Awin feed".
+
 ## Prices from sale emails
 
 Shops that block the collectors still email their sales. `newsletters` reads those emails and adds the prices

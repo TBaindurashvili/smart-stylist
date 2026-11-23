@@ -7,7 +7,7 @@
 <h1>Is this sale real?</h1>
 <p class="lead">
     Prices from the last @DealsReport.RecentDays days that are on sale or below their usual price, from sale emails,
-    the browser extension and the daily collector. Each is compared with the product's own price history:
+    the browser extension, Awin product feeds and the daily collector. Each is compared with the product's own price history:
     <strong>usual</strong> is the typical price on earlier days. A verdict needs @DealsReport.MinHistoryDays days of history.
 </p>
 
@@ -97,6 +97,7 @@ else
     {
         PriceSource.Newsletter => "sale email",
         PriceSource.Extension => "saved in browser",
+        PriceSource.AffiliateFeed => "Awin feed",
         _ => "collector",
     };
 

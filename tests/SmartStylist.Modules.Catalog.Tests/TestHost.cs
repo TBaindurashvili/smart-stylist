@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
+using SmartStylist.Modules.Catalog.Affiliates;
 using SmartStylist.Modules.Catalog.Collection;
 using SmartStylist.Modules.Catalog.Newsletters;
 using SmartStylist.Modules.Catalog.Persistence;
@@ -63,6 +64,8 @@ internal sealed class TestHost : IAsyncDisposable
 
         services.AddCatalogCollection();
         services.AddHttpClient(HttpPageFetcher.ClientName).ConfigurePrimaryHttpMessageHandler(() => Web);
+        services.AddHttpClient(AwinFeedImportService.ClientName).ConfigurePrimaryHttpMessageHandler(() => Web);
+        services.AddOptions<AwinOptions>().Configure(o => o.ApiKey = "test-key");
         services.AddSingleton<TimeProvider>(Time);
         services.AddSingleton<INewsletterExtractor>(Extractor);
         services.AddSingleton<ILinkResolver>(Links);
@@ -148,6 +151,9 @@ internal sealed class FakeWeb : HttpMessageHandler
 
     public void Serve(string url, string content, string mediaType = "text/html") =>
         _routes[url] = () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(content, System.Text.Encoding.UTF8, mediaType) };
+
+    public void Serve(string url, byte[] content) =>
+        _routes[url] = () => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) };
 
     public void Remove(string url) => _routes.Remove(url);
 

@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using SmartStylist.Modules.Catalog.Affiliates;
 using SmartStylist.Modules.Catalog.Collection;
 using SmartStylist.Modules.Catalog.Newsletters;
 using SmartStylist.Modules.Catalog.Persistence;
@@ -10,7 +11,7 @@ namespace SmartStylist.Worker;
 
 internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, int? Limit, bool UseBrowser, string? Folder)
 {
-    private static readonly string[] Commands = ["collect", "report", "migrate", "install-browser", "probe", "newsletters"];
+    private static readonly string[] Commands = ["collect", "report", "migrate", "install-browser", "probe", "newsletters", "awin", "awin-feeds"];
 
     public static CliCommand? Parse(string[] args)
     {
@@ -63,7 +64,7 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
             return await ProbeAsync(provider.GetRequiredService<ProductPageProbe>(), cancellationToken);
         }
 
-        if (Name is "migrate" or "collect" or "newsletters")
+        if (Name is "migrate" or "collect" or "newsletters" or "awin")
         {
             await provider.GetRequiredService<CatalogDbContext>().Database.MigrateAsync(cancellationToken);
             await provider.GetRequiredService<ShopCatalogSync>().SyncAsync(cancellationToken);
@@ -91,6 +92,11 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
         if (Name == "newsletters")
         {
             await ImportNewslettersAsync(provider, runLog, cancellationToken);
+        }
+
+        if (Name is "awin" or "awin-feeds")
+        {
+            await AwinAsync(provider.GetRequiredService<AwinFeedImportService>(), runLog, cancellationToken);
         }
 
         if (Name is "collect" or "report")
@@ -135,6 +141,37 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
         }
 
         Console.WriteLine($"{result.Processed.Count} emails read, {result.AlreadyRead} skipped as already read.");
+    }
+
+    private async Task AwinAsync(AwinFeedImportService awin, RunLogFile runLog, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (Name == "awin-feeds")
+            {
+                // What Awin offers: joined programmes are imported by "awin" when Awin:FeedIds is empty.
+                foreach (var feed in (await awin.ListFeedsAsync(cancellationToken)).OrderByDescending(f => f.Joined).ThenBy(f => f.AdvertiserName))
+                {
+                    Console.WriteLine($"{(feed.Joined ? "joined" : "-"),-7} feed {feed.FeedId,-7} advertiser {feed.AdvertiserId,-7} {feed.Products,7} products  {feed.Region,-3} {feed.AdvertiserName} · {feed.FeedName}");
+                }
+
+                return;
+            }
+
+            foreach (var result in await awin.ImportAsync(cancellationToken))
+            {
+                var line = $"{result.ShopKey ?? "-",-16} feed {result.Feed.FeedId,-7} {result.Products,6} products {result.Prices,7} prices  {result.Feed.AdvertiserName}" +
+                    (result.Error is null ? "" : $"  error: {result.Error}");
+                Console.WriteLine(line);
+                runLog.WriteLine(line);
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
+        {
+            // No API key, or Awin refused it: one clear line instead of a stack trace.
+            Console.WriteLine(ex.Message);
+            runLog.WriteLine(ex.Message);
+        }
     }
 
     // Arguments are product URLs here, not shop keys.

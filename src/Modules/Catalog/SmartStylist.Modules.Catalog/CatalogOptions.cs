@@ -49,6 +49,9 @@ public sealed class ShopOptions
     /// </summary>
     public List<string> EmailDomains { get; set; } = [];
 
+    /// <summary>Awin advertiser id, so the shop's Awin product feed saves prices here instead of in a separate "awin-{id}" shop.</summary>
+    public int? AwinAdvertiserId { get; set; }
+
     /// <summary>Free text for people reading the config, e.g. why a shop is disabled. Not used by code.</summary>
     public string? Note { get; set; }
 }

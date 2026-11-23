@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SmartStylist.Modules.Catalog.Affiliates;
 using SmartStylist.Modules.Catalog.Collection;
 using SmartStylist.Modules.Catalog.Newsletters;
 using SmartStylist.Modules.Catalog.Persistence;
@@ -38,6 +39,7 @@ public static class CatalogModule
             .Validate(o => o.Shops.Select(s => s.Key).Distinct().Count() == o.Shops.Count, "Shop keys must be unique.")
             .ValidateOnStart();
         services.AddOptions<NewsletterOptions>().Bind(configuration.GetSection(NewsletterOptions.SectionName));
+        services.AddOptions<AwinOptions>().Bind(configuration.GetSection(AwinOptions.SectionName));
 
         var connectionString = GetConnectionString(configuration);
 
@@ -103,6 +105,9 @@ public static class CatalogModule
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<NewsletterImportService>>()));
         services.AddScoped<ImportNewslettersJob>();
+
+        services.AddHttpClient<AwinFeedImportService>(AwinFeedImportService.ClientName, client => client.Timeout = TimeSpan.FromMinutes(10));
+        services.AddScoped<ImportAwinFeedsJob>();
         return services;
     }
 }
