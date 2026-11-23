@@ -181,6 +181,11 @@ namespace SmartStylist.Modules.Catalog.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("captured_at");
 
+                    b.Property<string>("Colour")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("colour");
+
                     b.Property<string>("Currency")
                         .IsRequired()
                         .HasMaxLength(3)
@@ -308,11 +313,24 @@ namespace SmartStylist.Modules.Catalog.Persistence.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<bool?>("AcceptsForeignCard")
+                        .HasColumnType("boolean")
+                        .HasColumnName("accepts_foreign_card");
+
+                    b.Property<bool?>("AcceptsForwarder")
+                        .HasColumnType("boolean")
+                        .HasColumnName("accepts_forwarder");
+
                     b.Property<string>("BaseUrl")
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
                         .HasColumnName("base_url");
+
+                    b.Property<string>("CheckoutNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("checkout_note");
 
                     b.Property<string>("ConfiguredStrategy")
                         .IsRequired()
@@ -347,6 +365,20 @@ namespace SmartStylist.Modules.Catalog.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("name");
+
+                    b.Property<string>("Platform")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("platform");
+
+                    b.Property<DateTimeOffset?>("PlatformCheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("platform_checked_at");
+
+                    b.Property<string>("PlatformEvidence")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("platform_evidence");
 
                     b.HasKey("Id")
                         .HasName("pk_shops");

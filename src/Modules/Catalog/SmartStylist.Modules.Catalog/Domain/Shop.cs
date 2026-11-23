@@ -20,4 +20,20 @@ public sealed class Shop
     public CollectorStrategy? DetectedStrategy { get; set; }
 
     public bool Enabled { get; set; } = true;
+
+    /// <summary>The platform found by the detector; picks the adapter.</summary>
+    public ShopPlatform? Platform { get; set; }
+
+    public string? PlatformEvidence { get; set; }
+
+    public DateTimeOffset? PlatformCheckedAt { get; set; }
+
+    /// <summary>Ships to a forwarder address without cancelling. Null = not known yet.</summary>
+    public bool? AcceptsForwarder { get; set; }
+
+    /// <summary>Accepts a card issued outside the shop's country. Null = not known yet.</summary>
+    public bool? AcceptsForeignCard { get; set; }
+
+    /// <summary>Checkout tips learned from real orders, e.g. "no digits in the name field".</summary>
+    public string? CheckoutNote { get; set; }
 }

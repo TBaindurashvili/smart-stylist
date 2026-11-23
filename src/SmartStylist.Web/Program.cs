@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http.Json;
 using SmartStylist.Modules.Catalog;
 using SmartStylist.Modules.Wardrobe;
 using SmartStylist.Modules.Catalog.Collection;
+using SmartStylist.Modules.Catalog.Reporting;
 using SmartStylist.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -50,6 +51,17 @@ app.MapHangfireDashboard("/hangfire");
 // Called by the browser extension. No CORS policy on purpose: only the extension's host permission lets a page reach this.
 app.MapPost("/api/captures", (PageCapture capture, PageCaptureService service, CancellationToken cancellationToken) =>
     service.CaptureAsync(capture, cancellationToken));
+
+// Price-history API for the stylist layer.
+app.MapGet("/api/products/{id:long}/history", async (long id, string? colour, string? size, PriceHistoryService history, TimeProvider time, CancellationToken cancellationToken) =>
+    await history.GetHistoryAsync(id, colour, size, DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime), cancellationToken) is { } result
+        ? Results.Ok(result)
+        : Results.NotFound());
+app.MapGet("/api/drops", async (DateOnly? since, string? sizes, PriceHistoryService history, TimeProvider time, CancellationToken cancellationToken) =>
+    await history.GetDropsAsync(
+        since ?? DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime).AddDays(-1),
+        sizes?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+        cancellationToken));
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()

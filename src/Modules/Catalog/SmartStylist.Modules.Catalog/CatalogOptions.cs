@@ -52,6 +52,15 @@ public sealed class ShopOptions
     /// <summary>Awin advertiser id, so the shop's Awin product feed saves prices here instead of in a separate "awin-{id}" shop.</summary>
     public int? AwinAdvertiserId { get; set; }
 
+    /// <summary>Ships to a forwarder address without cancelling (learned from real orders). Null = not known yet.</summary>
+    public bool? AcceptsForwarder { get; set; }
+
+    /// <summary>Accepts a foreign card. Null = not known yet.</summary>
+    public bool? AcceptsForeignCard { get; set; }
+
+    /// <summary>Checkout tips learned from real orders.</summary>
+    public string? CheckoutNote { get; set; }
+
     /// <summary>Free text for people reading the config, e.g. why a shop is disabled. Not used by code.</summary>
     public string? Note { get; set; }
 }

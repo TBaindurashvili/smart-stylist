@@ -85,8 +85,10 @@ public static class CatalogModule
             sp.GetRequiredService<CatalogDbContext>(),
             sp.GetRequiredService<TimeProvider>()));
         services.AddScoped<CollectPricesJob>();
+        services.AddScoped<PlatformDetector>();
         services.AddScoped<DataQualityReport>();
         services.AddScoped<DealsReport>();
+        services.AddScoped<PriceHistoryService>();
         services.AddSingleton(TimeProvider.System);
 
         services.AddHttpClient<ILinkResolver, LinkResolver>(LinkResolver.ClientName, (sp, client) =>

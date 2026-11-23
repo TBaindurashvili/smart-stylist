@@ -9,11 +9,12 @@ public sealed record ScrapedProduct(
     string? ImageUrl,
     IReadOnlyList<ScrapedOffer> Offers);
 
-/// <summary>A sellable variant (usually a size) and its price today.</summary>
+/// <summary>A sellable variant (a size, and the colour when the shop has several) and its price today.</summary>
 public sealed record ScrapedOffer(
     string VariantKey,
     string? SizeLabel,
     decimal Price,
     decimal? ListPrice,
     string Currency,
-    bool? InStock);
+    bool? InStock,
+    string? Colour = null);

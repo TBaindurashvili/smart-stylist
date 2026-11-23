@@ -42,6 +42,7 @@ Other commands:
 ```bash
 dotnet run --project src/SmartStylist.Worker -- collect levis uniqlo   # only some shops (full 300 products)
 dotnet run --project src/SmartStylist.Worker -- report                 # print the report again
+dotnet run --project src/SmartStylist.Worker -- detect [shop ...]                 # find each shop's platform (Shopify, Salesforce, Magento, Next.js...)
 dotnet run --project src/SmartStylist.Worker -- probe <product url> [--browser]   # what the parser reads from one page; saves the HTML
 dotnet run --project src/SmartStylist.Worker -- newsletters [--folder <dir>]           # price new sale emails (mailbox, or saved .eml files)
 dotnet run --project src/SmartStylist.Worker                           # leave running: collects every shop daily at 05:00 UTC
@@ -124,6 +125,20 @@ To use it, start the web app, open `chrome://extensions`, turn on Developer mode
 the `extension` folder. Nothing is saved while the app is off; the toolbar icon then shows a red `!`.
 
 A new shop has to be added both to `Catalog:Shops` and to `matches` in `extension/manifest.json`.
+
+## Price-history API
+
+The web app serves the numbers the stylist layer needs:
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /api/products/{id}/history?colour=&size=` | Current price, all-time low (and when), 90-day low, median, how many days at each price level, and the daily series. |
+| `GET /api/drops?since=2026-11-20&sizes=M,L,32` | SKUs (colour + size) that hit a new low or came back in stock since that day; `sizes` keeps only yours. |
+
+Page reading tries, in order: schema.org JSON-LD, microdata, the app state the page embeds (`__NEXT_DATA__`,
+`__INITIAL_STATE__`, `__PRELOADED_STATE__`, JSON `__NUXT__`), then Open Graph tags. Each price is stored per SKU:
+product + colour + size. Shops in `Catalog:Shops` can carry `AcceptsForwarder`, `AcceptsForeignCard` and `CheckoutNote`,
+learned from real orders; the data-quality page shows them with the detected platform.
 
 ## Fit ledger
 

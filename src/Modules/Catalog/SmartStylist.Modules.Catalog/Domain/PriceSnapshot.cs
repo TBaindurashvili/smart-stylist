@@ -16,6 +16,9 @@ public sealed class PriceSnapshot
 
     public string? SizeLabel { get; set; }
 
+    /// <summary>The colour of this variant, when the shop sells the product in several. A SKU is style + colour + size.</summary>
+    public string? Colour { get; set; }
+
     public DateOnly ObservedOn { get; set; }
 
     /// <summary>The price a buyer would pay today, before shipping and duties.</summary>

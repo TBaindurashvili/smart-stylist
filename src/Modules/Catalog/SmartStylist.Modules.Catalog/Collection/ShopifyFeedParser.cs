@@ -10,6 +10,9 @@ internal static partial class ShopifyFeedParser
     [GeneratedRegex("size|waist|length|inseam|width", RegexOptions.IgnoreCase)]
     private static partial Regex SizeOptionName();
 
+    [GeneratedRegex("^colou?r", RegexOptions.IgnoreCase)]
+    private static partial Regex ColourOptionName();
+
     public static IReadOnlyList<ScrapedProduct> Parse(string json, Uri shopRoot, string currency)
     {
         using var document = JsonDocument.Parse(json);
@@ -42,6 +45,7 @@ internal static partial class ShopifyFeedParser
         }
 
         var sizeOptionPositions = new List<int>();
+        int? colourPosition = null;
         if (product.TryGetProperty("options", out var options) && options.ValueKind == JsonValueKind.Array)
         {
             var index = 0;
@@ -53,6 +57,10 @@ internal static partial class ShopifyFeedParser
                 if (name is not null && SizeOptionName().IsMatch(name))
                 {
                     sizeOptionPositions.Add(position);
+                }
+                else if (name is not null && ColourOptionName().IsMatch(name))
+                {
+                    colourPosition ??= position;
                 }
             }
         }
@@ -84,7 +92,8 @@ internal static partial class ShopifyFeedParser
                     Price: price.Value,
                     ListPrice: compareAt > price ? compareAt : null,
                     Currency: currency,
-                    InStock: available));
+                    InStock: available,
+                    Colour: colourPosition is { } c ? ReadString(variant, $"option{c}") : null));
             }
         }
 

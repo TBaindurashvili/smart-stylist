@@ -12,7 +12,7 @@ namespace SmartStylist.Worker;
 
 internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, int? Limit, bool UseBrowser, string? Folder)
 {
-    private static readonly string[] Commands = ["collect", "report", "migrate", "install-browser", "probe", "newsletters", "awin", "awin-feeds"];
+    private static readonly string[] Commands = ["collect", "report", "migrate", "install-browser", "probe", "newsletters", "awin", "awin-feeds", "detect"];
 
     public static CliCommand? Parse(string[] args)
     {
@@ -65,7 +65,7 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
             return await ProbeAsync(provider.GetRequiredService<ProductPageProbe>(), cancellationToken);
         }
 
-        if (Name is "migrate" or "collect" or "newsletters" or "awin")
+        if (Name is "migrate" or "collect" or "newsletters" or "awin" or "detect")
         {
             await provider.GetRequiredService<CatalogDbContext>().Database.MigrateAsync(cancellationToken);
             await provider.GetRequiredService<WardrobeDbContext>().Database.MigrateAsync(cancellationToken);
@@ -94,6 +94,11 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
         if (Name == "newsletters")
         {
             await ImportNewslettersAsync(provider, runLog, cancellationToken);
+        }
+
+        if (Name == "detect")
+        {
+            await DetectAsync(provider, runLog, cancellationToken);
         }
 
         if (Name is "awin" or "awin-feeds")
@@ -143,6 +148,35 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
         }
 
         Console.WriteLine($"{result.Processed.Count} emails read, {result.AlreadyRead} skipped as already read.");
+    }
+
+    /// <summary>Finds each shop's platform (Shopify, Salesforce, Magento, Next.js...) and saves it.</summary>
+    private async Task DetectAsync(IServiceProvider provider, RunLogFile runLog, CancellationToken cancellationToken)
+    {
+        var db = provider.GetRequiredService<CatalogDbContext>();
+        var detector = provider.GetRequiredService<PlatformDetector>();
+        var shops = await db.Shops.Where(s => ShopKeys.Count == 0 || ShopKeys.Contains(s.Key)).OrderBy(s => s.Key).ToListAsync(cancellationToken);
+        foreach (var shop in shops)
+        {
+            PlatformDetection detection;
+            try
+            {
+                detection = await detector.DetectAsync(new Uri(shop.BaseUrl), cancellationToken);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                detection = new PlatformDetection(Modules.Catalog.Domain.ShopPlatform.Unknown, $"request failed: {ex.Message}");
+            }
+
+            shop.Platform = detection.Platform;
+            shop.PlatformEvidence = detection.Evidence.Length > 200 ? detection.Evidence[..200] : detection.Evidence;
+            shop.PlatformCheckedAt = DateTimeOffset.UtcNow;
+            var line = $"{shop.Key,-16} {detection.Platform,-24} {detection.Evidence}";
+            Console.WriteLine(line);
+            runLog.WriteLine(line);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
     }
 
     private async Task AwinAsync(AwinFeedImportService awin, RunLogFile runLog, CancellationToken cancellationToken)

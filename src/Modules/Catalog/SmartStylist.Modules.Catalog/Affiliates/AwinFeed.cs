@@ -23,7 +23,7 @@ public static class AwinFeed
     [
         "aw_product_id", "merchant_product_id", "parent_product_id", "merchant_id", "merchant_name", "product_name",
         "brand_name", "aw_deep_link", "merchant_deep_link", "aw_image_url", "merchant_image_url", "search_price",
-        "rrp_price", "store_price", "currency", "in_stock", "Fashion:size",
+        "rrp_price", "store_price", "currency", "in_stock", "Fashion:size", "colour",
     ];
 
     public static async Task<IReadOnlyList<AwinFeedInfo>> ParseFeedListAsync(TextReader reader, CancellationToken cancellationToken)
@@ -117,7 +117,7 @@ public static class AwinFeed
         };
 
         var offer = new ScrapedOffer(id, size, price.Value, rrp > price ? rrp : null,
-            (header.Get(row, "currency") ?? "").ToUpperInvariant(), inStock);
+            (header.Get(row, "currency") ?? "").ToUpperInvariant(), inStock, header.Get(row, "colour"));
         var scraped = new ScrapedProduct(
             header.Get(row, "parent_product_id") ?? id,
             url,

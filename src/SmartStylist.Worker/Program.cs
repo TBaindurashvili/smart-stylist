@@ -12,6 +12,7 @@ using SmartStylist.Worker;
 //   dotnet run -- install-browser      -> download headless Chromium for shops that need a real browser
 //   dotnet run -- probe <url> [--browser]  -> show what the parser reads from one product page and save the HTML
 //   dotnet run -- newsletters [--folder <dir>]  -> price new sale emails from the IMAP mailbox, or from saved .eml files
+//   dotnet run -- detect [shop ...]   -> find and save each shop's platform (Shopify, Salesforce, Magento, Next.js...)
 //   dotnet run -- awin-feeds           -> list the Awin product feeds and which programmes you joined
 //   dotnet run -- awin                 -> import today's prices from the Awin product feeds
 var command = CliCommand.Parse(args);
