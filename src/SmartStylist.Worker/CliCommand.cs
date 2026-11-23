@@ -6,6 +6,7 @@ using SmartStylist.Modules.Catalog.Collection;
 using SmartStylist.Modules.Catalog.Newsletters;
 using SmartStylist.Modules.Catalog.Persistence;
 using SmartStylist.Modules.Catalog.Reporting;
+using SmartStylist.Modules.Wardrobe.Persistence;
 
 namespace SmartStylist.Worker;
 
@@ -67,6 +68,7 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
         if (Name is "migrate" or "collect" or "newsletters" or "awin")
         {
             await provider.GetRequiredService<CatalogDbContext>().Database.MigrateAsync(cancellationToken);
+            await provider.GetRequiredService<WardrobeDbContext>().Database.MigrateAsync(cancellationToken);
             await provider.GetRequiredService<ShopCatalogSync>().SyncAsync(cancellationToken);
         }
 

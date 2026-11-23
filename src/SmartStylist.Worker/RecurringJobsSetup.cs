@@ -6,6 +6,7 @@ using SmartStylist.Modules.Catalog.Affiliates;
 using SmartStylist.Modules.Catalog.Collection;
 using SmartStylist.Modules.Catalog.Newsletters;
 using SmartStylist.Modules.Catalog.Persistence;
+using SmartStylist.Modules.Wardrobe.Persistence;
 
 namespace SmartStylist.Worker;
 
@@ -22,6 +23,7 @@ internal sealed class RecurringJobsSetup(
     {
         await using var scope = scopes.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<CatalogDbContext>().Database.MigrateAsync(cancellationToken);
+        await scope.ServiceProvider.GetRequiredService<WardrobeDbContext>().Database.MigrateAsync(cancellationToken);
         var shops = await scope.ServiceProvider.GetRequiredService<ShopCatalogSync>().SyncAsync(cancellationToken);
 
         foreach (var shop in shops)

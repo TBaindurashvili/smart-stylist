@@ -1,6 +1,7 @@
 @page "/deals"
 @rendermode InteractiveServer
 @inject DealsReport Report
+@inject SmartStylist.Modules.Wardrobe.Fit.FitAdvisor Advisor
 
 <PageTitle>Deals · Smart Stylist</PageTitle>
 
@@ -46,6 +47,10 @@ else
                         <td>
                             <a href="@row.Url" target="_blank" rel="noopener">@row.Title</a>
                             <div class="muted">@row.ShopName@(row.Brand is null ? "" : $" · {row.Brand}")</div>
+                            @if (row.Brand is not null && _sizes.TryGetValue(row.Brand, out var advice) && advice.Size is not null)
+                            {
+                                <div class="size-hint" title="@advice.Reason">Your size: <strong>@advice.Size</strong></div>
+                            }
                         </td>
                         <td>
                             <span class="pill verdict-@Css(a.Verdict)">@Label(a.Verdict)</span>
@@ -80,8 +85,13 @@ else
 @code {
     private IReadOnlyList<DealRow>? _rows;
     private DealVerdict? _filter;
+    private IReadOnlyDictionary<string, SmartStylist.Modules.Wardrobe.Fit.SizeAdvice> _sizes = new Dictionary<string, SmartStylist.Modules.Wardrobe.Fit.SizeAdvice>();
 
-    protected override async Task OnInitializedAsync() => _rows = await Report.BuildAsync(CancellationToken.None);
+    protected override async Task OnInitializedAsync()
+    {
+        _rows = await Report.BuildAsync(CancellationToken.None);
+        _sizes = await Advisor.SuggestForBrandsAsync(_rows.Select(r => r.Brand), CancellationToken.None);
+    }
 
     private void Toggle(DealVerdict verdict) => _filter = _filter == verdict ? null : verdict;
 

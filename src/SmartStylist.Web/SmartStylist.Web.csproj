@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Modules\Catalog\SmartStylist.Modules.Catalog\SmartStylist.Modules.Catalog.csproj" />
+    <ProjectReference Include="..\Modules\Wardrobe\SmartStylist.Modules.Wardrobe\SmartStylist.Modules.Wardrobe.csproj" />
   </ItemGroup>
 
 </Project>

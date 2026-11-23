@@ -1,6 +1,7 @@
 using Hangfire;
 using Hangfire.PostgreSql;
 using SmartStylist.Modules.Catalog;
+using SmartStylist.Modules.Wardrobe;
 using SmartStylist.Worker;
 
 // Usage:
@@ -26,6 +27,7 @@ builder.Logging.AddProvider(runLog);
 builder.Services.AddSingleton(runLog);
 
 builder.Services.AddCatalogModule(builder.Configuration);
+builder.Services.AddWardrobeModule(CatalogModule.GetConnectionString(builder.Configuration));
 
 if (command is null)
 {

@@ -10,6 +10,7 @@ Real-discount verdicts need about 30 days of price history, so this runs first.
 | Part | What it does |
 | --- | --- |
 | `src/Modules/Catalog` | The Catalog module: shops, products, daily price snapshots, collectors, the data-quality report. |
+| `src/Modules/Wardrobe` | The Wardrobe module: the fit ledger and size advice. |
 | `src/SmartStylist.Worker` | Background host. Runs Hangfire and one daily price job per shop. Also a small CLI (`collect`, `report`). |
 | `src/SmartStylist.Web` | Blazor web app. Today it shows the data-quality page and the Hangfire dashboard. |
 | `tests/` | Parser tests with fixture pages and end-to-end collection tests against in-memory SQLite. |
@@ -123,6 +124,13 @@ To use it, start the web app, open `chrome://extensions`, turn on Developer mode
 the `extension` folder. Nothing is saved while the app is off; the toolbar icon then shows a red `!`.
 
 A new shop has to be added both to `Catalog:Shops` and to `matches` in `extension/manifest.json`.
+
+## Fit ledger
+
+The **Fit** page (`/fit`) records how each item fitted after delivery: brand, model, kind of item, size, and
+too small / snug / perfect / roomy / too big. "Which size should I buy?" answers from these records: the same model
+first, then the same kind of item from the brand, then the brand. The Deals page shows "Your size" next to brands
+you have records for. Records live in the `wardrobe` schema (Wardrobe module), created by the worker or the web app on start.
 
 ## Prices from Awin product feeds
 

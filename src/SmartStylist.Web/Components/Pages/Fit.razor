@@ -1,0 +1,123 @@
+@page "/fit"
+@rendermode InteractiveServer
+@using SmartStylist.Modules.Wardrobe.Domain
+@using SmartStylist.Modules.Wardrobe.Fit
+@inject FitLedger Ledger
+@inject FitAdvisor Advisor
+
+<PageTitle>Fit ledger · Smart Stylist</PageTitle>
+
+<h1>What size fits you?</h1>
+<p class="lead">
+    Record how each item fitted after delivery. Size advice comes from these records first: the same model,
+    then the same kind of item, then the brand. Your fit beats any size chart.
+</p>
+
+<section class="card">
+    <h2>Which size should I buy?</h2>
+    <div class="form-row">
+        <input placeholder="Brand, e.g. Uniqlo" @bind="_askBrand" @bind:event="oninput" />
+        <input placeholder="Model (optional)" @bind="_askModel" />
+        <input placeholder="Kind, e.g. tee (optional)" @bind="_askCategory" />
+        <button class="primary" @onclick="AskAsync" disabled="@string.IsNullOrWhiteSpace(_askBrand)">Suggest</button>
+    </div>
+    @if (_advice is not null)
+    {
+        <p class="advice">
+            @if (_advice.Size is not null) { <strong>@_advice.Size</strong> <span class="pill confidence-@_advice.Confidence.ToString().ToLowerInvariant()">@_advice.Confidence confidence</span> }
+            <span>@_advice.Reason</span>
+        </p>
+    }
+</section>
+
+<section class="card">
+    <h2>Add a fit</h2>
+    <div class="form-row">
+        <input placeholder="Brand *" @bind="_brand" @bind:event="oninput" />
+        <input placeholder="Model, e.g. 541 Athletic" @bind="_model" />
+        <input placeholder="Kind, e.g. jeans" @bind="_category" />
+        <input placeholder="Size * (XL, W32 L32, EU 45)" @bind="_size" @bind:event="oninput" />
+        <select @bind="_verdict">
+            @foreach (var v in Enum.GetValues<FitVerdict>())
+            {
+                <option value="@v">@Label(v)</option>
+            }
+        </select>
+        <label class="check"><input type="checkbox" @bind="_kept" /> Kept</label>
+    </div>
+    <div class="form-row">
+        <input class="wide" placeholder="Note, e.g. sleeves a bit long" @bind="_note" />
+        <button class="primary" @onclick="AddAsync" disabled="@(string.IsNullOrWhiteSpace(_brand) || string.IsNullOrWhiteSpace(_size))">Save</button>
+    </div>
+</section>
+
+@if (_entries is null)
+{
+    <p>Loading…</p>
+}
+else if (_entries.Count == 0)
+{
+    <p class="muted">No fits recorded yet.</p>
+}
+else
+{
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>Brand</th><th>Model</th><th>Kind</th><th>Size</th><th>Fit</th><th>Note</th><th>Recorded</th><th></th></tr>
+            </thead>
+            <tbody>
+                @foreach (var e in _entries)
+                {
+                    <tr>
+                        <td>@e.Brand</td>
+                        <td>@e.Model</td>
+                        <td>@e.Category</td>
+                        <td><strong>@e.Size</strong></td>
+                        <td><span class="pill fit-@e.Verdict.ToString().ToLowerInvariant()">@Label(e.Verdict)</span>@if (!e.Kept) { <div class="muted">returned</div> }</td>
+                        <td>@e.Note</td>
+                        <td>@e.RecordedOn.ToString("MMM d, yyyy")</td>
+                        <td><button class="link" @onclick="() => RemoveAsync(e.Id)">Remove</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<FitEntry>? _entries;
+    private string? _brand, _model, _category, _size, _note;
+    private FitVerdict _verdict = FitVerdict.Perfect;
+    private bool _kept = true;
+    private string? _askBrand, _askModel, _askCategory;
+    private SizeAdvice? _advice;
+
+    protected override async Task OnInitializedAsync() => _entries = await Ledger.ListAsync(CancellationToken.None);
+
+    private async Task AddAsync()
+    {
+        await Ledger.AddAsync(_brand!, _model, _category, _size!, _verdict, _note, _kept, CancellationToken.None);
+        _model = _category = _size = _note = null;
+        _verdict = FitVerdict.Perfect;
+        _kept = true;
+        _entries = await Ledger.ListAsync(CancellationToken.None);
+    }
+
+    private async Task RemoveAsync(long id)
+    {
+        await Ledger.RemoveAsync(id, CancellationToken.None);
+        _entries = await Ledger.ListAsync(CancellationToken.None);
+    }
+
+    private async Task AskAsync() => _advice = await Advisor.SuggestAsync(_askBrand!, _askModel, _askCategory, CancellationToken.None);
+
+    private static string Label(FitVerdict verdict) => verdict switch
+    {
+        FitVerdict.TooSmall => "Too small",
+        FitVerdict.Snug => "Snug",
+        FitVerdict.Perfect => "Perfect",
+        FitVerdict.Roomy => "Roomy",
+        _ => "Too big",
+    };
+}
