@@ -1,0 +1,112 @@
+@page "/deals"
+@rendermode InteractiveServer
+@inject DealsReport Report
+
+<PageTitle>Deals · Smart Stylist</PageTitle>
+
+<h1>Is this sale real?</h1>
+<p class="lead">
+    Prices from the last @DealsReport.RecentDays days that are on sale or below their usual price, from sale emails,
+    the browser extension and the daily collector. Each is compared with the product's own price history:
+    <strong>usual</strong> is the typical price on earlier days. A verdict needs @DealsReport.MinHistoryDays days of history.
+</p>
+
+@if (_rows is null)
+{
+    <p>Loading…</p>
+}
+else if (_rows.Count == 0)
+{
+    <p>No deals yet. Save a product page with the browser extension, or run <code>newsletters</code> in the worker.</p>
+}
+else
+{
+    <div class="summary">
+        @foreach (var verdict in new[] { DealVerdict.BestPrice, DealVerdict.GoodPrice, DealVerdict.StillLearning, DealVerdict.FakeSale })
+        {
+            <button class="pill verdict-@Css(verdict) @(_filter == verdict ? "selected" : "")" @onclick="() => Toggle(verdict)">
+                @Label(verdict): @_rows.Count(r => r.Assessment.Verdict == verdict)
+            </button>
+        }
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Product</th><th>Verdict</th><th class="num">Price</th><th class="num">Shop says</th>
+                    <th class="num">Usual</th><th class="num">Real discount</th><th class="num">Days</th><th>Seen</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _rows.Where(r => _filter is null || r.Assessment.Verdict == _filter))
+                {
+                    var a = row.Assessment;
+                    <tr>
+                        <td>
+                            <a href="@row.Url" target="_blank" rel="noopener">@row.Title</a>
+                            <div class="muted">@row.ShopName@(row.Brand is null ? "" : $" · {row.Brand}")</div>
+                        </td>
+                        <td><span class="pill verdict-@Css(a.Verdict)" title="@Explain(row)">@Label(a.Verdict)</span></td>
+                        <td class="num">@Money(row.Price, row.Currency)</td>
+                        <td class="num">
+                            @if (a.ClaimedDiscount is { } claimed)
+                            {
+                                <span>@claimed.ToString("P0") off</span>
+                                <div class="muted"><s>@Money(row.ListPrice!.Value, row.Currency)</s></div>
+                            }
+                        </td>
+                        <td class="num">@(a.UsualPrice is null ? "–" : Money(a.UsualPrice.Value, row.Currency))</td>
+                        <td class="num">@(a.RealDiscount is null ? "–" : a.RealDiscount.Value.ToString("P0"))</td>
+                        <td class="num">@a.Days</td>
+                        <td>@row.ObservedOn.ToString("MMM d")<div class="muted">@Source(row.Source)</div></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <p class="muted">
+        <strong>Best price</strong>: the lowest we have seen and @DealsReport.BestPriceDiscount.ToString("P0")+ below usual.
+        <strong>Good price</strong>: @DealsReport.GoodPriceDiscount.ToString("P0")+ below usual.
+        <strong>Fake sale</strong>: the shop shows a crossed-out price, but this is about what it usually costs.
+        <strong>Still learning</strong>: fewer than @DealsReport.MinHistoryDays earlier days of prices, so only the shop's claim is shown.
+    </p>
+}
+
+@code {
+    private IReadOnlyList<DealRow>? _rows;
+    private DealVerdict? _filter;
+
+    protected override async Task OnInitializedAsync() => _rows = await Report.BuildAsync(CancellationToken.None);
+
+    private void Toggle(DealVerdict verdict) => _filter = _filter == verdict ? null : verdict;
+
+    private static string Label(DealVerdict verdict) => verdict switch
+    {
+        DealVerdict.BestPrice => "Best price",
+        DealVerdict.GoodPrice => "Good price",
+        DealVerdict.StillLearning => "Still learning",
+        DealVerdict.FakeSale => "Fake sale",
+        _ => "Usual price",
+    };
+
+    private static string Css(DealVerdict verdict) => verdict.ToString().ToLowerInvariant();
+
+    private static string Source(PriceSource source) => source switch
+    {
+        PriceSource.Newsletter => "sale email",
+        PriceSource.Extension => "saved in browser",
+        _ => "collector",
+    };
+
+    private static string Explain(DealRow row)
+    {
+        var a = row.Assessment;
+        return a.UsualPrice is null
+            ? $"Only {a.Days} day(s) of prices so far."
+            : $"Usually {Money(a.UsualPrice.Value, row.Currency)}, lowest before {Money(a.LowestBefore!.Value, row.Currency)}, over {a.Days} days.";
+    }
+
+    private static string Money(decimal amount, string currency) => $"{amount:0.00} {currency}";
+}

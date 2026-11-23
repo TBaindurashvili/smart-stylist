@@ -32,7 +32,7 @@ if (command is null)
         .UseSimpleAssemblyNameTypeSerializer()
         .UseRecommendedSerializerSettings()
         .UsePostgreSqlStorage(
-            storage => storage.UseNpgsqlConnection(builder.Configuration.GetConnectionString(CatalogModule.ConnectionStringName)),
+            storage => storage.UseNpgsqlConnection(CatalogModule.GetConnectionString(builder.Configuration)),
             new PostgreSqlStorageOptions { SchemaName = "hangfire", PrepareSchemaIfNecessary = true }));
 
     builder.Services.AddHangfireServer(options => options.WorkerCount = builder.Configuration.GetValue("Hangfire:WorkerCount", 2));
