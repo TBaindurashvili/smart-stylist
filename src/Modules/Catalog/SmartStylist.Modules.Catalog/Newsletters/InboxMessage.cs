@@ -9,6 +9,7 @@ namespace SmartStylist.Modules.Catalog.Newsletters;
 /// <summary>An email as read from the mailbox, before any extraction.</summary>
 /// <param name="FromAddress">The shop's address. For a forwarded email this is the original sender, not the person who forwarded it.</param>
 /// <param name="ForwardedBy">Who forwarded the email, when it was forwarded.</param>
+/// <param name="IsTransactional">One-to-one mail such as an order update or password reset: it has no List-Unsubscribe header.</param>
 public sealed partial record InboxMessage(
     string MessageId,
     string FromAddress,
@@ -16,7 +17,8 @@ public sealed partial record InboxMessage(
     DateTimeOffset ReceivedAt,
     string? Html,
     string? Text,
-    string? ForwardedBy = null)
+    string? ForwardedBy = null,
+    bool IsTransactional = false)
 {
     public static InboxMessage FromMime(MimeMessage message)
     {
@@ -25,7 +27,7 @@ public sealed partial record InboxMessage(
         // "Forward as attachment" (Outlook, Gmail): the shop's email travels whole inside this one.
         if (message.BodyParts.OfType<MessagePart>().FirstOrDefault()?.Message is { } attached)
         {
-            return FromMime(attached) with { ForwardedBy = from };
+            return FromMime(attached) with { ForwardedBy = from, IsTransactional = false };
         }
 
         var subject = message.Subject ?? "";
@@ -38,8 +40,11 @@ public sealed partial record InboxMessage(
         var id = string.IsNullOrWhiteSpace(message.MessageId)
             ? "sha256:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{from}|{message.Date:O}|{subject}")))
             : message.MessageId;
-        return new InboxMessage(id, originalSender ?? from, subject, message.Date, message.HtmlBody, message.TextBody,
-            ForwardedBy: originalSender is null ? null : from);
+
+        // Emails carry the sender's offset; Postgres only stores UTC.
+        return new InboxMessage(id, originalSender ?? from, subject, message.Date.ToUniversalTime(), message.HtmlBody, message.TextBody,
+            ForwardedBy: originalSender is null ? null : from,
+            IsTransactional: originalSender is null && !message.Headers.Contains(HeaderId.ListUnsubscribe));
     }
 
     /// <summary>

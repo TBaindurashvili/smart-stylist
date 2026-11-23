@@ -22,7 +22,7 @@ PostgreSQL schema (`catalog` here, later `wardrobe`, `orders`, `landedcost`), an
 You need the .NET 10 SDK and Docker.
 
 ```bash
-docker compose up -d                                         # PostgreSQL 16 on localhost:5432
+docker compose up -d                                         # PostgreSQL 16 on localhost:5432 (POSTGRES_PORT=5433 if taken)
 dotnet run --project src/SmartStylist.Worker -- install-browser   # once: headless Chromium for shops that block plain HTTP
 dotnet run --project src/SmartStylist.Worker -- collect --limit 20   # quick test: 20 products per shop, then prints the report
 ```
@@ -38,7 +38,7 @@ dotnet run --project src/SmartStylist.Worker -- report                 # print t
 dotnet run --project src/SmartStylist.Worker -- probe <product url> [--browser]   # what the parser reads from one page; saves the HTML
 dotnet run --project src/SmartStylist.Worker -- newsletters [--folder <dir>]           # price new sale emails (mailbox, or saved .eml files)
 dotnet run --project src/SmartStylist.Worker                           # leave running: collects every shop daily at 05:00 UTC
-dotnet run --project src/SmartStylist.Web                              # http://localhost:5227 (report) and /hangfire (jobs)
+dotnet run --project src/SmartStylist.Web                              # http://localhost:5227 (report, /hangfire jobs, browser extension)
 ```
 
 ## How prices are collected
@@ -106,6 +106,18 @@ the saved HTML.
 `Strategy` can be `Auto`, `Shopify`, `SitemapJsonLd` or `BrowserJsonLd`. Remove a shop from the list to
 disable it; its history is kept.
 
+## Prices from your own browser
+
+`extension/` is a Chrome extension for the shops that block the collectors. When you open a page on one of your
+shops, it sends the page's structured data (JSON-LD, microdata, price meta tags), never the rest of the page, to
+`POST http://localhost:5227/api/captures`. `SmartStylist.Web` parses it like a crawled page and stores the price
+with `Source = Extension`. The popup shows the price, sizes in stock and the lowest price seen from any source.
+
+To use it, start the web app, open `chrome://extensions`, turn on Developer mode, choose **Load unpacked** and pick
+the `extension` folder. Nothing is saved while the app is off; the toolbar icon then shows a red `!`.
+
+A new shop has to be added both to `Catalog:Shops` and to `matches` in `extension/manifest.json`.
+
 ## Prices from sale emails
 
 Shops that block the collectors still email their sales. `newsletters` reads those emails and adds the prices
@@ -115,7 +127,8 @@ How one email is handled:
 
 1. The sender is matched to a shop by domain (`jcrew@e.jcrew.com` → `jcrew.com`). Senders that match no shop
    are recorded as `UnknownSender` and never sent anywhere. Add `"EmailDomains": ["levi.com"]` to a shop if its
-   emails come from a different domain.
+   emails come from a different domain. A shop email with no `List-Unsubscribe` header (order update, password
+   reset) is recorded as `Transactional` and never sent to the model. Forwarded emails skip this check.
 2. The HTML is turned into plain text. Links become short ids like `[L3]`.
 3. Claude (`Newsletters:Model`, default `claude-haiku-5-5`) lists the products whose prices are printed, copying
    each price exactly as written.
@@ -172,7 +185,7 @@ for harder emails at about $0.08 each.
 ## Development
 
 ```bash
-dotnet test                       # no database or network needed
+dotnet test                       # needs Docker: the email date tests run on real Postgres
 dotnet tool restore
 dotnet ef migrations add <Name> --project src/Modules/Catalog/SmartStylist.Modules.Catalog \
   --startup-project src/SmartStylist.Worker --output-dir Persistence/Migrations
