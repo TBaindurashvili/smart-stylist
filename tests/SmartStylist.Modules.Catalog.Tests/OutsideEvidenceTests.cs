@@ -88,7 +88,7 @@ public class OutsideEvidenceTests
 
         Assert.Equal(5, result.Rows);
         Assert.Equal(2, result.PricesAdded);
-        Assert.Equal(2, result.Skipped.Count);
+        Assert.Equal(3, result.Skipped.Count); // bad date, a second price the same day, and a shop with no store name
         var snapshots = await SnapshotsAsync(host);
         Assert.Equal([128m, 98m], snapshots.Select(s => s.Price));
         Assert.Equal(128m, snapshots[1].ListPrice);
@@ -137,5 +137,39 @@ public class OutsideEvidenceTests
 
         Assert.False(a.LowConfidence);
         Assert.DoesNotContain("Less certain", a.Reason);
+    }
+
+    [Fact]
+    public async Task Imports_the_stylist_tables_with_stores_the_app_does_not_collect()
+    {
+        await using var host = new TestHost(TaylorStitch, new ShopOptions { Key = "levis", Name = "Levi's", BaseUrl = "https://www.levi.com/US/en_US", Currency = "USD", Enabled = false });
+        await host.InitializeAsync();
+        var csv = """
+            date,brand,model,colour,style_code,store,currency,list_price,sale_price,price_after_code,url,size
+            2026-10-13,The North Face,1996 Retro Nuptse,Black,NF0A3C8DDIW,END. Clothing UK,GBP,315,160.65,,,L
+            2026-11-16,The North Face,1996 Retro Nuptse,Black,NF0A3C8DDIW,END. Clothing UK,GBP,,236,,,L
+            2026-10-24,Levi's,Japanese Selvedge 502 Taper,Dark Resin Rinse,A58810000,Levi's US,USD,250,150,,,
+            2026-11-23,Nike,Metcon 10,Pumice,HJ1875-007,Nike.com US,USD,155,98.97,74.23,https://www.nike.com/t/metcon-10/HJ1875-007,US 12.5
+            """;
+
+        var result = await host.InScopeAsync(sp => sp.GetRequiredService<ManualPriceImport>().ImportAsync(new StringReader(csv), CancellationToken.None));
+
+        Assert.Equal(4, result.PricesAdded);
+        Assert.Equal(2, result.ShopsAdded);
+        var (shops, products) = await host.InScopeAsync(async sp =>
+        {
+            var db = sp.GetRequiredService<CatalogDbContext>();
+            return (await db.Shops.OrderBy(s => s.Key).ToListAsync(), await db.Products.Include(p => p.Shop).ToListAsync());
+        });
+        Assert.Contains(shops, s => s is { Key: "manual-end-clothing-uk", Currency: "GBP", Enabled: false });
+        Assert.Contains(shops, s => s is { Key: "manual-nike-com-us", BaseUrl: "https://www.nike.com" });
+        var nuptse = Assert.Single(products, p => p.Shop.Key == "manual-end-clothing-uk");
+        Assert.Equal("manual:the-north-face-1996-retro-nuptse-nf0a3c8ddiw", nuptse.ExternalId);
+        Assert.Equal("", nuptse.Url);
+        Assert.Equal("The North Face", nuptse.Brand);
+        Assert.Single(products, p => p.Shop.Key == "levis");
+        var snapshots = await SnapshotsAsync(host);
+        Assert.All(snapshots, s => Assert.Equal(PriceSource.ManualHistory, s.Source));
+        Assert.Contains(snapshots, s => s.Price == 98.97m && s.ListPrice == 155m);
     }
 }

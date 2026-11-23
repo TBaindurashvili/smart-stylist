@@ -40,7 +40,8 @@ internal static class OutsideEvidenceWriter
         {
             ShopId = shop.Id,
             ExternalId = Truncate(url, 500),
-            Url = url,
+            // A product known only from notes has a "manual:" key and no page to link to.
+            Url = url.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? url : "",
             Title = Truncate(string.IsNullOrWhiteSpace(title) ? url : title, 500),
             FirstSeenAt = now,
             LastSeenAt = now,
