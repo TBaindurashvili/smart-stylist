@@ -1,9 +1,9 @@
 # Smart Stylist
 
 An AI personal stylist that plans a wardrobe and buys only real deals, with delivered cost to Georgia.
-This repository starts with **M0, the data test**: before any stylist features, we collect each tracked
-product's price once a day from the shops you actually buy from, and find out which shops give clean data.
-Real-discount verdicts need about 30 days of price history, so this runs first.
+The goal and the next steps are in [docs/MISSION.md](docs/MISSION.md); how the code is laid out is in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Today the app collects prices from shops, sale emails, Awin feeds and
+a browser extension, judges whether a sale is real, and keeps a fit ledger.
 
 ## What is here
 
@@ -12,11 +12,11 @@ Real-discount verdicts need about 30 days of price history, so this runs first.
 | `src/Modules/Catalog` | The Catalog module: shops, products, daily price snapshots, collectors, the data-quality report. |
 | `src/Modules/Wardrobe` | The Wardrobe module: the fit ledger and size advice. |
 | `src/SmartStylist.Worker` | Background host. Runs Hangfire and one daily price job per shop. Also a small CLI (`collect`, `report`). |
-| `src/SmartStylist.Web` | Blazor web app. Today it shows the data-quality page and the Hangfire dashboard. |
-| `tests/` | Parser tests with fixture pages and end-to-end collection tests against in-memory SQLite. |
+| `src/SmartStylist.Web` | Blazor web app: data quality (`/`), deals (`/deals`), fit ledger (`/fit`), the extension and price-history APIs, the Hangfire dashboard. |
+| `tests/` | Parser tests with fixture pages, end-to-end tests against in-memory SQLite, and a few on real Postgres (need Docker). |
 
 It is a modular monolith: each business area becomes a module under `src/Modules` with its own
-PostgreSQL schema (`catalog` here, later `wardrobe`, `orders`, `landedcost`), and both hosts load the modules they need.
+PostgreSQL schema (`catalog`, `wardrobe`, later `orders`, `landedcost`), and both hosts load the modules they need.
 
 ## Quick start
 
@@ -62,7 +62,7 @@ Each shop is tried with the cheapest source first, and the one that works is rem
    `/details`), every colour and size with base and promo price and stock. The page's JSON-LD shows a $1.90-$3.90
    placeholder on sold-out items, so the page is not used.
 
-Every price from every source passes a **sanity check** before it is saved (`Catalog:PriceSanity`): it is refused
+Every price from a crawl, the extension, the browser watch, an Awin feed or the archive passes a **sanity check** before it is saved (`Catalog:PriceSanity`): it is refused
 when it is under 15% of the SKU's usual (median) price or of its own crossed-out price, or under the floor for
 its category (tees $5, outerwear $20, footwear $15..., matched on title words; floors apply to USD prices).
 `collect` prints how many were refused and why.
@@ -141,28 +141,13 @@ Failing shops list the reason under the table, such as "HTTP 403" (blocked) or "
 
 ## The shops
 
-Picked from your mailbox: shops you ordered from, then shops whose sale newsletters you get most, then backups.
-Status after two real runs on 2026-10-24 (20 products per shop):
+Shops are listed in `Catalog:Shops` in `src/SmartStylist.Worker/appsettings.json`. Each one that is off or treated
+specially has a `Note` saying why (blocked by bot protection, geo-blocked, watch only, dropped). Blocked shops stay
+listed with `"Enabled": false` so their sale emails, Awin feed and extension prices still match them.
 
-| Key | Shop | Status |
-| --- | --- | --- |
-| `reebok` | Reebok | **Clean** via Shopify feed: sizes, stock and sale prices |
-| `uniqlo` | Uniqlo | **Usable** via browser: sizes and stock; some sitemap products are gone (404) |
-| `jcrew` | J.Crew | **Usable** via browser: prices and stock, no sizes |
-| `thursdayboots` | Thursday Boots | **Poor** via browser; feed rate-limited (429). URL pattern added, 429 now retried once |
-| `dressup` | Dressup.ge | Collector off (no price data from crawled pages). Save prices with the browser extension, which works here |
-| `patagonia` | Patagonia | Collector off, same as Dressup.ge |
-| `levis`, `lululemon`, `adidas`, `underarmour`, `kohls`, `brooksbrothers`, `ssense` | | Off: blocked in run 1 |
-| `clarks`, `huckberry`, `timberland`, `ecco`, `lacoste`, `massimodutti`, `mrporter`, `steepandcheap` | | Off: blocked in run 2 |
-
-Shops that block automated visits are switched off rather than retried every day; each has a `Note` in config
-saying how it failed. They are candidates for an affiliate product feed; their sale emails are already read (see
-[Prices from sale emails](#prices-from-sale-emails)).
-
-The `ProductUrlPattern` values in `src/SmartStylist.Worker/appsettings.json` are educated guesses at each shop's
-product URL shape. If a shop fails with "no product URLs in the sitemap", open its sitemap in a browser and fix the
-pattern, or set `SitemapUrl` directly. If pages load but give no price, run `probe` on one product URL and share
-the saved HTML.
+The `ProductUrlPattern` values are educated guesses at each shop's product URL shape. If a shop fails with "no
+product URLs in the sitemap", open its sitemap in a browser and fix the pattern, or set `SitemapUrl` directly. If
+pages load but give no price, run `probe` on one product URL and look at the saved HTML.
 
 ### Adding or tuning a shop
 
@@ -171,8 +156,8 @@ the saved HTML.
   "Strategy": "Auto", "ProductUrlPattern": "/en-us/product/", "SitemapUrl": null }
 ```
 
-`Strategy` can be `Auto`, `Shopify`, `SitemapJsonLd` or `BrowserJsonLd`. Remove a shop from the list to
-disable it; its history is kept.
+`Strategy` can be `Auto` (Shopify feed, then sitemap + JSON-LD), `Shopify`, `SitemapJsonLd`, `BrowserJsonLd` or
+`UniqloApi`. Set `"Enabled": false` to stop collecting a shop; its history is kept.
 
 ## Prices from your own browser
 

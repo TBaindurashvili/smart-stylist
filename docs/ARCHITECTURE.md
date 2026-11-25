@@ -1,0 +1,67 @@
+# Architecture
+
+One page on how the code is laid out and where a change belongs. The why is in [MISSION.md](MISSION.md); how to
+run things is in the [README](../README.md).
+
+## Shape
+
+A **modular monolith** in .NET 10: one PostgreSQL database, one schema per module, two hosts that load the modules.
+
+```
+src/
+  Modules/Catalog     shops, products, daily prices, every way a price gets in, deals   (schema: catalog)
+  Modules/Wardrobe    the fit ledger and size advice                                    (schema: wardrobe)
+  SmartStylist.Worker Hangfire jobs + the CLI (collect, newsletters, awin, wayback, watch...)
+  SmartStylist.Web    Blazor pages (/, /deals, /fit, /shops/{key}), the extension and price-history APIs
+extension/            Chrome extension: sends the structured data of a shop page you open to the web app
+tests/                xUnit per module; SQLite in memory, plus a few Postgres tests via Testcontainers (need Docker)
+```
+
+Modules do not reference each other. A module exposes `Add<Name>Module(...)` and its services; hosts never touch
+its tables directly. New business areas (style profile, picks, landed cost, forwarders) become new modules with
+their own schema rather than growing Catalog.
+
+## The price pipeline (Catalog)
+
+Everything ends as a `PriceSnapshot`: one price per product, variant (colour + size) and day, with its `Source`.
+
+| Way in | Code | Source |
+| --- | --- | --- |
+| Daily crawl: Shopify feed, sitemap + JSON-LD, Uniqlo API | `Collection/PriceCollectionService` + `IShopCollector`s | `Crawl` |
+| Watched pages in a real Chrome (J.Crew, lululemon) | `Collection/BrowserWatchService` | `Crawl` |
+| A page the user opens, via the extension | `Collection/PageCaptureService` | `Extension` |
+| Awin affiliate product feeds | `Affiliates/AwinFeedImportService` | `AffiliateFeed` |
+| Sale emails, read by Claude and checked by code | `Newsletters/NewsletterImportService` + `ExtractionGuard` | `Newsletter` |
+| Old prices: Wayback Machine, written-down tables | `Evidence/*` via `OutsideEvidenceWriter` | `Archive`, `ManualHistory` |
+
+The first four share **`PriceWriter`**: it matches a product by id or page address, runs **`PriceSanityCheck`**
+(refuses placeholders and teasers) and replaces today's price of each variant. Emails and outside evidence have
+their own writers because they are dated in the past and must never overwrite a price the app saw itself.
+
+Page parsing is shared too: `JsonLdProductParser` reads JSON-LD, microdata, embedded app state
+(`EmbeddedStateParser`) and Open Graph tags for the crawl, the extension, the watch and `probe`.
+
+Reading prices back: `Reporting/DealsReport` (buy now / wait / fake sale / still learning, against the item's own
+history, no % thresholds), `PriceHistoryService` (the `/api/products/{id}/history` and `/api/drops` endpoints)
+and `DataQualityReport` (which shops give clean data).
+
+## Rules the code keeps
+
+- A wrong price is worse than no price: every source is checked before it is saved, and a verdict leaning on
+  outside evidence says "less certain".
+- Shops that block automated visits are named (`BotWall`) and left alone: no CAPTCHA solving, no fingerprint
+  faking, no logins, no checkout. Geo-blocked shops go through a configured egress (`EgressRouter`).
+- Shops live in config (`Catalog:Shops` in the worker's appsettings.json) and are synced to the database on start
+  (`ShopCatalogSync`). A shop that blocks crawling stays listed with `Enabled: false` so its emails, feed and
+  extension prices still match it.
+- Secrets only in user-secrets or environment variables.
+
+## Known debt
+
+- `CollectorStrategy.BrowserJsonLd` (crawl a whole shop in the browser) is not used by any shop. It stays because
+  past runs in the database store it by name.
+- Hangfire setup is repeated in both hosts' `Program.cs`.
+- Some services keep `internal` constructors and are registered by hand in `CatalogModule` because they take
+  internal types (fetchers, collectors).
+- The shop list and its notes date from the first data test; the "Quality catalogue" item in MISSION.md replaces
+  it with a curated list.

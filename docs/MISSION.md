@@ -23,12 +23,12 @@ lowest (4), "is this sale real" next (5), and the rest equal (6).
 
 1. **Know the person's style.** Style quizzes that detect what they want and can steer to a new
    style at any time. Sizes per brand (a fit ledger) so the size is right first time.
-2. **Plan the wardrobe.** What's missing, what to skip, what goes with what.
-3. **Buy smart.** Is the sale real, buy now or wait, always with a reason. No fixed % thresholds:
+1. **Plan the wardrobe.** What's missing, what to skip, what goes with what.
+2. **Buy smart.** Is the sale real, buy now or wait, always with a reason. No fixed % thresholds:
    a deal is a price near the item's realistic low.
-4. **Quality first.** Cover every source of high-quality clothing, because different users have
+3. **Quality first.** Cover every source of high-quality clothing, because different users have
    different styles; never push low-quality items just because they are cheap.
-5. **Notify intelligently.** It speaks up on its own when it finds something really worth it for
+4. **Notify intelligently.** It speaks up on its own when it finds something really worth it for
    *this* person (quality, fit, style, price). No fixed number of alerts and no simple threshold.
    Channels: daily email, Telegram, the website and phone push.
 6. **Real cost to Georgia.** Price + shipping + forwarder + VAT/fees, in GEL.
@@ -54,17 +54,22 @@ Success after 3 months: **"I stopped buying things I don't wear"** and **"I save
 Each item is one worker thread. When one is done, tick it, add what was learned, and keep this
 list at 3-5 items.
 
-1. **Codebase health pass.** Map what exists, delete what's dead or duplicated, write a one-page
-   architecture note in `docs/`. Sets the bar for everything after.
-2. **Quality catalogue.** A curated list of high-quality brands and shops (men's and women's)
+1. **Quality catalogue.** A curated list of high-quality brands and shops (men's and women's)
    with how each can be read (feed, API, email, extension). This replaces "which shops can we
    scrape" with "which shops matter".
-3. **Style profile and quiz.** A first quiz that captures a person's style, sizes and no-go
+2. **Style profile and quiz.** A first quiz that captures a person's style, sizes and no-go
    items, stored per user. This is the base for everything personal.
-4. **Smart pick and notification.** One score per item for a given person (quality, style fit,
+3. **Smart pick and notification.** One score per item for a given person (quality, style fit,
    size confidence, price vs realistic low) and a rule for when it is worth telling them. First
    channel: Telegram or daily email.
-5. **First outside user ready.** Sign-up, their own profile, and their own picks.
+4. **First outside user ready.** Sign-up, their own profile, and their own picks.
 
 Later: landed cost in GEL on every pick, forwarder declarations and tracking in the app,
 phone app, Armenia.
+
+## Done
+
+- **Codebase health pass** (2026-11-25). Architecture note in [ARCHITECTURE.md](ARCHITECTURE.md). Learned: the
+  code had little dead code but one big copy: the product + price save was written three times, and Awin prices
+  skipped the sanity check. Now one `PriceWriter` serves crawl, extension, browser watch and Awin. Blocked shops
+  stay in config (they still match emails, feeds and the extension); the quality catalogue will curate them.
