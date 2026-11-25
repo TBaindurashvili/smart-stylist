@@ -99,17 +99,25 @@ list at 3-5 items.
 1. **Shared brand inbox.** Import sale emails from one app Gmail subscribed to every catalogue
    shop's newsletter (`NewsletterInbox: "shared"`), so outside users do not depend on Temo's Gmail.
    Temo creates the account; the thread builds the import and lists which shops to subscribe.
-2. **Networks research.** Every affiliate network and aggregator that carries fashion feeds
-   (Awin, CJ, Rakuten, impact.com, FlexOffers, Partnerize, Skimlinks, Sovrn, ShopStyle and
-   others): requirements, whether Georgia is accepted, brands covered, feed or API access, and an
-   apply order. Output: a tracker in `docs/` with status and reapply dates.
-3. **First outside user ready.** Sign-up, their own profile, and their own picks.
+2. **First outside user ready.** Sign-up, their own profile, and their own picks.
+3. **Sovrn price comparison source.** Once Temo has a Sovrn Commerce API key, read prices for
+   watched catalogue items from its price comparison API (180M products, NA/EU/AU) through
+   `PriceWriter`, as one more route-1 source. See [NETWORKS.md](NETWORKS.md).
 
 Later: picks judged per size (a deal's price is the cheapest variant today, which may not be in their size), close the catalogue's gaps (about 9 brands, mostly women's, have no price source: try
 `detect`, `probe`, extension), landed cost in GEL, forwarder declarations and tracking, phone
 app, Armenia.
 
 ## Done
+
+- **Networks research** (2026-11-25). [NETWORKS.md](NETWORKS.md): every fashion affiliate network and aggregator,
+  what a small Georgian publisher needs, how it pays, its feed or API, which catalogue brands it carries, an apply
+  order and a tracker with reapply dates. Order: finish Awin and CJ; apply now to FlexOffers, Sovrn Commerce and
+  Admitad; Rakuten and Partnerize once wearworth.app is live; impact.com, AvantLink and Skimlinks with numbers in Feb.
+  Learned: Payoneer is the one payout route that works everywhere (PayPal in Georgia may be send-only); Rakuten's
+  brands are moving onto impact.com over 2026-27, so one later impact acceptance covers both; Sovrn's price
+  comparison API (180M products) can price items without a programme; Awin alone reaches ~13 catalogue brands;
+  about 17 brands are still unmapped and are best checked from inside a network's advertiser directory.
 
 - **Smart pick and notification** (2026-11-25). New Picks module (schema `picks`) on top of Catalog and Wardrobe.
   A fresh deal on a quality-catalogue brand is told to a person only when price ("buy now"), style
