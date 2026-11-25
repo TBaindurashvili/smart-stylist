@@ -110,14 +110,7 @@ public static class CatalogModule
             })
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
         services.AddSingleton<INewsletterExtractor, ClaudeNewsletterExtractor>();
-        services.AddScoped(sp => new NewsletterImportService(
-            sp.GetRequiredService<CatalogDbContext>(),
-            sp.GetRequiredService<INewsletterExtractor>(),
-            sp.GetRequiredService<ILinkResolver>(),
-            sp.GetRequiredService<IOptions<CatalogOptions>>(),
-            sp.GetRequiredService<IOptions<NewsletterOptions>>(),
-            sp.GetRequiredService<TimeProvider>(),
-            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<NewsletterImportService>>()));
+        services.AddScoped<NewsletterImportService>();
         services.AddScoped<ImportNewslettersJob>();
 
         services.AddHttpClient<AwinFeedImportService>(AwinFeedImportService.ClientName, client => client.Timeout = TimeSpan.FromMinutes(10));
@@ -135,10 +128,7 @@ public static class CatalogModule
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<IOptions<CatalogOptions>>(),
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<WaybackSeedService>>()));
-        services.AddScoped(sp => new ManualPriceImport(
-            sp.GetRequiredService<CatalogDbContext>(),
-            sp.GetRequiredService<PriceSanityCheck>(),
-            sp.GetRequiredService<TimeProvider>()));
+        services.AddScoped<ManualPriceImport>();
         return services;
     }
 }

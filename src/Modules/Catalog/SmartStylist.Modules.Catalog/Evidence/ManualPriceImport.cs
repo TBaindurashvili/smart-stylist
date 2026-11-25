@@ -52,7 +52,7 @@ public sealed partial class ManualPriceImport
     private readonly PriceSanityCheck _sanity;
     private readonly TimeProvider _time;
 
-    internal ManualPriceImport(CatalogDbContext db, PriceSanityCheck sanity, TimeProvider time)
+    public ManualPriceImport(CatalogDbContext db, PriceSanityCheck sanity, TimeProvider time)
     {
         _db = db;
         _sanity = sanity;

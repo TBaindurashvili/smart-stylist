@@ -70,18 +70,5 @@ public sealed class PriceSanityCheck
         return ("any item", _options.DefaultFloor);
     }
 
-    /// <summary>The median of earlier prices, the "usual" price a new one is compared with.</summary>
-    public static decimal? Median(IReadOnlyCollection<decimal> prices)
-    {
-        if (prices.Count == 0)
-        {
-            return null;
-        }
-
-        var sorted = prices.Order().ToList();
-        var mid = sorted.Count / 2;
-        return sorted.Count % 2 == 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-    }
-
     private static string Money(decimal amount) => amount.ToString("0.00", CultureInfo.InvariantCulture);
 }

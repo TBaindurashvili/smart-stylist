@@ -55,7 +55,7 @@ public sealed class PriceWriter(CatalogDbContext db, PriceSanityCheck sanity, Ti
                 .Select(s => new { s.ProductId, s.VariantKey, s.Currency, s.Price })
                 .ToListAsync(cancellationToken))
             .GroupBy(s => (s.ProductId, s.VariantKey, s.Currency))
-            .ToDictionary(g => g.Key, g => PriceSanityCheck.Median(g.Select(s => s.Price).ToList()));
+            .ToDictionary(g => g.Key, g => g.Select(s => s.Price).Median());
 
         // Two items of one batch can land on the same product (same page address): one price per variant and day.
         var thisCall = new Dictionary<(Product, string), PriceSnapshot>();

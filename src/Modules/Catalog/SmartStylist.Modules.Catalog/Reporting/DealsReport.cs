@@ -104,7 +104,7 @@ public sealed class DealsReport(CatalogDbContext db, TimeProvider time)
                 claimed, null, null, null, null, days);
         }
 
-        var usual = Median(earlier.Select(p => p.Price).ToList());
+        var usual = earlier.Select(p => p.Price).Median()!.Value;
         var lowestPoint = earlier.OrderBy(p => p.Price).ThenByDescending(p => p.Day).First();
         var lowest = lowestPoint.Price;
         var real = usual <= 0 ? 0 : Math.Round((usual - price) / usual, 4);
@@ -191,12 +191,5 @@ public sealed class DealsReport(CatalogDbContext db, TimeProvider time)
             .OrderBy(r => r.Assessment.Verdict)
             .ThenByDescending(r => r.Assessment.RealDiscount ?? r.Assessment.ClaimedDiscount ?? 0)
             .ToList();
-    }
-
-    private static decimal Median(IReadOnlyList<decimal> values)
-    {
-        var sorted = values.Order().ToList();
-        var mid = sorted.Count / 2;
-        return sorted.Count % 2 == 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
     }
 }

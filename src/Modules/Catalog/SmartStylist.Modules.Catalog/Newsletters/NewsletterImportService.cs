@@ -20,7 +20,7 @@ public sealed partial class NewsletterImportService
     private readonly TimeProvider _time;
     private readonly ILogger<NewsletterImportService> _logger;
 
-    internal NewsletterImportService(
+    public NewsletterImportService(
         CatalogDbContext db,
         INewsletterExtractor extractor,
         ILinkResolver links,

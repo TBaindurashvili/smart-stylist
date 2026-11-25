@@ -90,7 +90,7 @@ public sealed class PriceHistoryService(CatalogDbContext db)
         return new PriceHistory(product.Id, product.Title, product.Brand, product.ShopName, product.Url, colour, size, latest.Currency,
             latest.Price, latest.ListPrice, latest.InStock, lastDay, lowest.Price, lowest.Day,
             recent.Count == 0 ? null : recent.Min(d => d.Price),
-            Median(daily.Select(d => d.Price).ToList()), daily.Count,
+            daily.Select(d => d.Price).Median(), daily.Count,
             daily.GroupBy(d => d.Price).Select(g => new PriceLevel(g.Key, g.Count())).OrderBy(l => l.Price).ToList(),
             daily);
     }
@@ -156,12 +156,5 @@ public sealed class PriceHistoryService(CatalogDbContext db)
         }
 
         return drops.OrderBy(d => d.Kind).ThenByDescending(d => d.On).ToList();
-    }
-
-    private static decimal Median(IReadOnlyList<decimal> values)
-    {
-        var sorted = values.Order().ToList();
-        var mid = sorted.Count / 2;
-        return sorted.Count % 2 == 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
     }
 }

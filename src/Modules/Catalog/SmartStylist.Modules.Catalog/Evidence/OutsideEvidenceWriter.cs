@@ -73,7 +73,7 @@ internal static class OutsideEvidenceWriter
             }
 
             var currency = offer.Currency.Length == 3 ? offer.Currency : fallbackCurrency;
-            var usual = PriceSanityCheck.Median(known.Where(s => s.VariantKey == key && s.Currency == currency).Select(s => s.Price).ToList());
+            var usual = known.Where(s => s.VariantKey == key && s.Currency == currency).Select(s => s.Price).Median();
             if (sanity.Reject(offer with { Currency = currency }, product.Title, usual) is not null)
             {
                 rejected++;
