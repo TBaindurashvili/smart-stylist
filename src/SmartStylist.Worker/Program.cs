@@ -1,6 +1,7 @@
 using Hangfire;
 using Hangfire.PostgreSql;
 using SmartStylist.Modules.Catalog;
+using SmartStylist.Modules.Picks;
 using SmartStylist.Modules.Wardrobe;
 using SmartStylist.Worker;
 
@@ -18,6 +19,10 @@ using SmartStylist.Worker;
 //   dotnet run -- wayback [core|shop ...|url ...] [--limit N]  -> seed price history from archive.org copies
 //   dotnet run -- import-prices <file.csv|file.md> [--date YYYY-MM-DD]  -> import written-down prices (Wardrobe doc tables)
 //   dotnet run -- catalogue            -> the quality catalogue: each brand, its best working price source, last 30 days
+//   dotnet run -- picks [person]       -> today's picks per person (or one person, by id or name), without sending
+//   dotnet run -- picks send           -> link new Telegram chats and send each linked person their new picks
+//   dotnet run -- picks link <person>  -> the Telegram link that person opens to get their picks
+//   dotnet run -- picks outcomes       -> was "buy now" right? (the mission's 8-of-10 check)
 //   dotnet run -- watch add <url> [--size M] | remove <url> | list | run  -> the real-Chrome watch (J.Crew, lululemon)
 var command = CliCommand.Parse(args);
 
@@ -34,6 +39,7 @@ builder.Services.AddSingleton(runLog);
 builder.Configuration.AddQualityCatalogue();
 builder.Services.AddCatalogModule(builder.Configuration);
 builder.Services.AddWardrobeModule(CatalogModule.GetConnectionString(builder.Configuration));
+builder.Services.AddPicksModule(builder.Configuration, CatalogModule.GetConnectionString(builder.Configuration));
 
 if (command is null)
 {

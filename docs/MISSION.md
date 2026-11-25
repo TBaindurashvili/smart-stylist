@@ -71,7 +71,7 @@ Each stage has Temo's own steps (outside the code) and a check that says the sta
 
 **Stage 2 - Friends (January 2027)**
 - Temo: pick 2-3 friends whose style the catalogue covers; each fills in the style quiz.
-- Code: smart pick score and daily picks on Telegram (style quiz is done).
+- Code: smart pick score and daily picks on Telegram (both done Nov 25; Temo creates the bot).
 - Check: each friend gets picks for 2+ weeks; "buy now" right 8 of 10 times (track every
   call and its outcome).
 
@@ -103,16 +103,24 @@ list at 3-5 items.
    (Awin, CJ, Rakuten, impact.com, FlexOffers, Partnerize, Skimlinks, Sovrn, ShopStyle and
    others): requirements, whether Georgia is accepted, brands covered, feed or API access, and an
    apply order. Output: a tracker in `docs/` with status and reapply dates.
-3. **Smart pick and notification.** One score per item for a given person (quality, style fit (`StyleQuiz.Match`),
-   size confidence, price vs realistic low) and a rule for when it is worth telling them. First
-   channel: Telegram. Record every "buy now" and its outcome for the 8-of-10 check.
-4. **First outside user ready.** Sign-up, their own profile, and their own picks.
+3. **First outside user ready.** Sign-up, their own profile, and their own picks.
 
-Later: close the catalogue's gaps (about 9 brands, mostly women's, have no price source: try
+Later: picks judged per size (a deal's price is the cheapest variant today, which may not be in their size), close the catalogue's gaps (about 9 brands, mostly women's, have no price source: try
 `detect`, `probe`, extension), landed cost in GEL, forwarder declarations and tracking, phone
 app, Armenia.
 
 ## Done
+
+- **Smart pick and notification** (2026-11-25). New Picks module (schema `picks`) on top of Catalog and Wardrobe.
+  A fresh deal on a quality-catalogue brand is told to a person only when price ("buy now"), style
+  (`StyleQuiz.Match` finds something of theirs, nothing excludes it) and size (ledger or usual size) all say yes; a
+  0-10 score (price 4, style 3, size 3) only orders. No pick, no message; an item is sent again only if cheaper.
+  Telegram: one bot, a per-person `t.me/<bot>?start=<code>` link, `/stop` to leave; daily at 06:30 UTC once
+  `Picks:Telegram:BotToken` is set. `/picks` page and `picks` CLI (`link`, `send`, `outcomes`). Every pick sent is
+  kept and checked 30 days later: right if no lower price was seen, so the 8-of-10 check needs nobody to report back.
+  Learned: a deal row is the cheapest variant of the day, so a "buy now" may not be in their size (size is judged per
+  brand, not per variant: a later fix); products still have no kind-of-item field, so the usual-size fallback reads
+  the title; "still learning" items (under 14 days of history) are never sent, so picks start slowly on new sources.
 
 - **Style profile and quiz** (2026-11-25). `/style`: one profile per person (Temo, then friends; men's, women's or
   both), a five-step quiz (love / skip catalogue brands, style words read from them, want / never kinds of item and

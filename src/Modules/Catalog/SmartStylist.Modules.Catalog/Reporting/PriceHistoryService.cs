@@ -38,6 +38,9 @@ public enum DropKind
     BackInStock,
 }
 
+/// <summary>One price the app has for a product on a day (any variant).</summary>
+public sealed record ProductPrice(long ProductId, DateOnly Day, decimal Price, string Currency);
+
 public sealed record PriceDrop(long ProductId, string Title, string? Brand, string ShopName, string Url, string? Colour, string? Size,
     string Currency, decimal Price, decimal? PreviousLow, DateOnly On, DropKind Kind);
 
@@ -94,6 +97,13 @@ public sealed class PriceHistoryService(CatalogDbContext db)
             daily.GroupBy(d => d.Price).Select(g => new PriceLevel(g.Key, g.Count())).OrderBy(l => l.Price).ToList(),
             daily);
     }
+
+    /// <summary>Every price of these products from <paramref name="from"/> on, e.g. to see whether a pick got cheaper later.</summary>
+    public async Task<IReadOnlyList<ProductPrice>> GetPricesAsync(IReadOnlyCollection<long> productIds, DateOnly from, CancellationToken cancellationToken) =>
+        await db.PriceSnapshots.AsNoTracking()
+            .Where(s => productIds.Contains(s.ProductId) && s.ObservedOn >= from)
+            .Select(s => new ProductPrice(s.ProductId, s.ObservedOn, s.Price, s.Currency))
+            .ToListAsync(cancellationToken);
 
     /// <summary>
     /// Products (per colour and size) that hit a new low or came back in stock on or after <paramref name="since"/>.

@@ -4,6 +4,7 @@ using Hangfire.PostgreSql;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Json;
 using SmartStylist.Modules.Catalog;
+using SmartStylist.Modules.Picks;
 using SmartStylist.Modules.Wardrobe;
 using SmartStylist.Modules.Catalog.Collection;
 using SmartStylist.Modules.Catalog.Reporting;
@@ -17,6 +18,7 @@ builder.Services.AddRazorComponents()
 builder.Configuration.AddQualityCatalogue();
 builder.Services.AddCatalogModule(builder.Configuration);
 builder.Services.AddWardrobeModule(CatalogModule.GetConnectionString(builder.Configuration));
+builder.Services.AddPicksModule(builder.Configuration, CatalogModule.GetConnectionString(builder.Configuration));
 builder.Services.Configure<JsonOptions>(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 // The web host only reads Hangfire state for the dashboard; jobs run in SmartStylist.Worker.
@@ -30,10 +32,11 @@ builder.Services.AddHangfire(config => config
 
 var app = builder.Build();
 
-// The fit ledger lives in its own schema; create it here too so the page works before the worker has run.
+// The fit ledger and picks live in their own schemas; create them here too so the page works before the worker has run.
 await using (var scope = app.Services.CreateAsyncScope())
 {
     await scope.ServiceProvider.GetRequiredService<SmartStylist.Modules.Wardrobe.Persistence.WardrobeDbContext>().Database.MigrateAsync();
+    await scope.ServiceProvider.GetRequiredService<SmartStylist.Modules.Picks.Persistence.PicksDbContext>().Database.MigrateAsync();
 }
 
 if (!app.Environment.IsDevelopment())

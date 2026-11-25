@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EFCore.NamingConventions" />
+    <PackageReference Include="Hangfire.Core" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Picks sits on top of the two: it reads deals from Catalog and the person from Wardrobe. Nothing references Picks. -->
+    <ProjectReference Include="..\..\Catalog\SmartStylist.Modules.Catalog\SmartStylist.Modules.Catalog.csproj" />
+    <ProjectReference Include="..\..\Wardrobe\SmartStylist.Modules.Wardrobe\SmartStylist.Modules.Wardrobe.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SmartStylist.Modules.Picks.Tests" />
+  </ItemGroup>
+
+</Project>

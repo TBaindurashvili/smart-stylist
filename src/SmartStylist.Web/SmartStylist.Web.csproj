@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Modules\Catalog\SmartStylist.Modules.Catalog\SmartStylist.Modules.Catalog.csproj" />
     <ProjectReference Include="..\Modules\Wardrobe\SmartStylist.Modules.Wardrobe\SmartStylist.Modules.Wardrobe.csproj" />
+    <ProjectReference Include="..\Modules\Picks\SmartStylist.Modules.Picks\SmartStylist.Modules.Picks.csproj" />
   </ItemGroup>
 
 </Project>

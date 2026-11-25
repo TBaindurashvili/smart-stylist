@@ -11,13 +11,15 @@ A **modular monolith** in .NET 10: one PostgreSQL database, one schema per modul
 src/
   Modules/Catalog     shops, products, daily prices, every way a price gets in, deals   (schema: catalog)
   Modules/Wardrobe    each person: style profile + quiz matching, fit ledger, size advice (schema: wardrobe)
+  Modules/Picks       smart picks per person, Telegram bot, buy-now outcomes; reads Catalog + Wardrobe (schema: picks)
   SmartStylist.Worker Hangfire jobs + the CLI (collect, newsletters, awin, wayback, watch...)
-  SmartStylist.Web    Blazor pages (/, /style, /deals, /fit, /shops/{key}), the extension and price-history APIs
+  SmartStylist.Web    Blazor pages (/, /style, /picks, /deals, /fit, /shops/{key}), the extension and price-history APIs
 extension/            Chrome extension: sends the structured data of a shop page you open to the web app
 tests/                xUnit per module; SQLite in memory, plus a few Postgres tests via Testcontainers (need Docker)
 ```
 
-Modules do not reference each other. A module exposes `Add<Name>Module(...)` and its services; hosts never touch
+Catalog and Wardrobe do not reference each other. Picks sits on top of both (it judges Catalog deals for a Wardrobe
+person) and nothing references Picks, so the dependencies only point one way. A module exposes `Add<Name>Module(...)` and its services; hosts never touch
 its tables directly. New business areas (picks, landed cost, forwarders) become new modules with their own schema
 rather than growing Catalog. The style profile went into Wardrobe instead of its own module: it is the person the fit
 ledger belongs to, and the fit ledger needs its id.
@@ -27,9 +29,17 @@ ledger belongs to, and the fit ledger needs its id.
 `StyleProfile` is one person (no sign-in yet; pages pick the person with `?person=ID` via `PersonPicker`). It holds
 liked / avoided style words, wanted kinds of item, no-go words, loved / skipped brands and usual sizes. Every `FitEntry`
 belongs to a profile. `Style/StyleQuiz` is pure: `Detect` reads style words from loved and skipped brands, `Match`
-scores a brand (and optionally an item's words) for a profile. Wardrobe does not see the catalogue: the web host turns
-catalogue brands into `BrandCard`s (`BrandCards.From`). `FitAdvisor` falls back to the quiz's usual size when the
+scores a brand (and optionally an item's words) for a profile. Wardrobe does not see the catalogue: Picks turns catalogue
+brands into `BrandCard`s (`BrandCards.From`, used by the quiz page too). `FitAdvisor` falls back to the quiz's usual size when the
 ledger has nothing for a brand and the kind of item is known.
+
+## Picks
+
+`DailyPicks` takes the fresh rows of `DealsReport`, keeps quality-catalogue brands (`QualityCatalogue.FindBrand`), and
+judges each for a person with the pure `PickRule`: tell only when price (buy now), style (`StyleQuiz.Match` > 0) and
+size (`FitAdvisor.ForPersonAsync`) all say yes; the 0-10 score only orders. `TelegramBot` links chats through a per-person
+`t.me/<bot>?start=<code>` link (Bot API `getUpdates`, so no public address is needed) and sends one message per person.
+Every pick sent is a `SentPick`: it stops repeats, and `PickOutcomes` judges it 30 days later from later prices.
 
 ## The price pipeline (Catalog)
 

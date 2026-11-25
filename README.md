@@ -3,7 +3,7 @@
 An AI personal stylist that plans a wardrobe and buys only real deals, with delivered cost to Georgia.
 The goal and the next steps are in [docs/MISSION.md](docs/MISSION.md); how the code is laid out is in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Today the app collects prices from shops, sale emails, Awin feeds and
-a browser extension, judges whether a sale is real, and keeps a fit ledger.
+a browser extension, judges whether a sale is real, keeps a fit ledger, and sends each person daily picks on Telegram.
 
 ## What is here
 
@@ -11,12 +11,13 @@ a browser extension, judges whether a sale is real, and keeps a fit ledger.
 | --- | --- |
 | `src/Modules/Catalog` | The Catalog module: shops, products, daily price snapshots, collectors, the data-quality report. |
 | `src/Modules/Wardrobe` | The Wardrobe module: each person's style profile, fit ledger and size advice. |
+| `src/Modules/Picks` | The Picks module: smart picks per person, the Telegram bot, and the "buy now" outcome check. |
 | `src/SmartStylist.Worker` | Background host. Runs Hangfire and one daily price job per shop. Also a small CLI (`collect`, `report`). |
-| `src/SmartStylist.Web` | Blazor web app: data quality (`/`), the quality catalogue (`/catalogue`), style profiles and quiz (`/style`), deals (`/deals`), fit ledger (`/fit`), the extension and price-history APIs, the Hangfire dashboard. |
+| `src/SmartStylist.Web` | Blazor web app: data quality (`/`), the quality catalogue (`/catalogue`), style profiles and quiz (`/style`), picks (`/picks`), deals (`/deals`), fit ledger (`/fit`), the extension and price-history APIs, the Hangfire dashboard. |
 | `tests/` | Parser tests with fixture pages, end-to-end tests against in-memory SQLite, and a few on real Postgres (need Docker). |
 
 It is a modular monolith: each business area becomes a module under `src/Modules` with its own
-PostgreSQL schema (`catalog`, `wardrobe`, later `orders`, `landedcost`), and both hosts load the modules they need.
+PostgreSQL schema (`catalog`, `wardrobe`, `picks`, later `orders`, `landedcost`), and both hosts load the modules they need.
 
 ## Quick start
 
@@ -261,6 +262,48 @@ The **Fit** page (`/fit`) records how each item fitted after delivery: brand, mo
 too small / snug / perfect / roomy / too big. "Which size should I buy?" answers from these records: the same model
 first, then the same kind of item from the brand, then the brand, then the person's usual size from the quiz (low confidence). The Deals page shows "Your size" next to
 brands the picked person has records for. Each person has their own ledger. Records live in the `wardrobe` schema (Wardrobe module), created by the worker or the web app on start.
+
+## Smart picks on Telegram
+
+A **pick** is a fresh deal (price seen in the last 3 days) on a quality-catalogue brand that is worth telling one
+person about. It is told only when all three say yes, with no percentage or score threshold:
+
+- **Price**: the deal rule says *buy now* (at or below its realistic low, or a rare sale on an item that is usually
+  full price). *Wait*, fake sales and "still learning" are never sent.
+- **Style**: `StyleQuiz.Match` finds something of theirs (a loved brand, a liked style word, a wanted kind of item)
+  and nothing that excludes it (skipped brand, no-go word, wrong audience).
+- **Size**: the fit ledger or their usual size from the quiz names a size to buy.
+
+Each pick also gets a score out of 10 (price 0-4, style 0-3, size 0-3) that only orders them. Nothing worth it means
+no message. Telegram gets each item once, and again only if it gets cheaper. **Picks** (`/picks`) shows a person's
+picks and why the rest were held back.
+
+"Buy now must be right 8 of 10 times": every pick sent is kept, and 30 days later it counts as **right** when the app
+saw no lower price for it, **wrong** when it did (`picks outcomes`, also on `/picks`).
+
+### Setup (once)
+
+1. In Telegram, message **@BotFather**, send `/newbot`, pick a name and a username ending in `bot`. Copy the token.
+2. Store the token as a secret and the username as plain config (the web app shares the worker's user-secrets):
+
+```bash
+dotnet user-secrets set "Picks:Telegram:BotToken" "<token from BotFather>" --project src/SmartStylist.Worker
+dotnet user-secrets set "Picks:Telegram:BotName" "<bot username, without @>" --project src/SmartStylist.Worker
+```
+
+3. Give each person their link (also shown on `/picks`), and have them open it and press **Start**:
+
+```bash
+cd src/SmartStylist.Worker
+dotnet run -- picks link Temo     # a profile name or id; prints https://t.me/<bot>?start=<code>
+dotnet run -- picks               # everyone's picks today, without sending (add a name for one person)
+dotnet run -- picks send          # link new chats, then send each linked person their new picks
+dotnet run -- picks outcomes      # was "buy now" right?
+```
+
+Presses of Start are read on the next `picks link` or `picks send` (Telegram keeps them for 24 hours). With the token
+set, the worker sends picks daily on `Picks:Cron` (06:30 UTC = 10:30 in Tbilisi), after the morning collection. `/stop`
+in the chat stops them.
 
 ## Prices from Awin product feeds
 

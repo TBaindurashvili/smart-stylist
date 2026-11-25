@@ -7,7 +7,11 @@ using SmartStylist.Modules.Catalog.Evidence;
 using SmartStylist.Modules.Catalog.Newsletters;
 using SmartStylist.Modules.Catalog.Persistence;
 using SmartStylist.Modules.Catalog.Reporting;
+using SmartStylist.Modules.Picks;
+using SmartStylist.Modules.Picks.Persistence;
+using SmartStylist.Modules.Picks.Telegram;
 using SmartStylist.Modules.Wardrobe.Persistence;
+using SmartStylist.Modules.Wardrobe.Style;
 
 namespace SmartStylist.Worker;
 
@@ -15,7 +19,7 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
     string? Date = null, string? Size = null)
 {
     private static readonly string[] Commands =
-        ["collect", "report", "migrate", "install-browser", "probe", "newsletters", "awin", "awin-feeds", "detect", "wayback", "import-prices", "watch", "catalogue"];
+        ["collect", "report", "migrate", "install-browser", "probe", "newsletters", "awin", "awin-feeds", "detect", "wayback", "import-prices", "watch", "catalogue", "picks"];
 
     public static CliCommand? Parse(string[] args)
     {
@@ -78,10 +82,11 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
             return await ProbeAsync(provider.GetRequiredService<ProductPageProbe>(), cancellationToken);
         }
 
-        if (Name is "migrate" or "collect" or "newsletters" or "awin" or "detect" or "wayback" or "import-prices" or "watch" or "catalogue")
+        if (Name is "migrate" or "collect" or "newsletters" or "awin" or "detect" or "wayback" or "import-prices" or "watch" or "catalogue" or "picks")
         {
             await provider.GetRequiredService<CatalogDbContext>().Database.MigrateAsync(cancellationToken);
             await provider.GetRequiredService<WardrobeDbContext>().Database.MigrateAsync(cancellationToken);
+            await provider.GetRequiredService<PicksDbContext>().Database.MigrateAsync(cancellationToken);
             await provider.GetRequiredService<ShopCatalogSync>().SyncAsync(cancellationToken);
         }
 
@@ -137,6 +142,11 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
             runLog.WriteLine($"Catalogue:{Environment.NewLine}{text}");
         }
 
+        if (Name == "picks")
+        {
+            await PicksAsync(provider, runLog, cancellationToken);
+        }
+
         if (Name is "awin" or "awin-feeds")
         {
             await AwinAsync(provider.GetRequiredService<AwinFeedImportService>(), runLog, cancellationToken);
@@ -154,6 +164,95 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
         Console.WriteLine($"Run log: {runLog.FilePath}");
         return 0;
     }
+
+    /// <summary>picks [person] | picks send | picks link &lt;person&gt; | picks outcomes. A person is a profile id or name.</summary>
+    private async Task PicksAsync(IServiceProvider provider, RunLogFile runLog, CancellationToken cancellationToken)
+    {
+        void Say(string line)
+        {
+            Console.WriteLine(line);
+            runLog.WriteLine(line);
+        }
+
+        var action = ShopKeys.FirstOrDefault()?.ToLowerInvariant();
+        var everyone = await provider.GetRequiredService<StyleProfiles>().ListAsync(cancellationToken);
+        var named = action is "link" or "send" or "outcomes" ? ShopKeys.Skip(1).FirstOrDefault() : ShopKeys.FirstOrDefault();
+        var people = named is null
+            ? everyone
+            : everyone.Where(p => p.Id.ToString(CultureInfo.InvariantCulture) == named || p.Name.Equals(named, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (people.Count == 0)
+        {
+            Say(named is null ? "No style profiles yet: take the quiz on /style first." : $"No profile called {named}. Profiles: {string.Join(", ", everyone.Select(p => $"{p.Id} {p.Name}"))}");
+            return;
+        }
+
+        try
+        {
+            if (action == "send")
+            {
+                var sent = await provider.GetRequiredService<DailyPicks>().SendAsync(cancellationToken);
+                if (sent.Count == 0)
+                {
+                    Say("Nobody has linked Telegram yet: run `picks link <person>` and open the link.");
+                }
+
+                foreach (var result in sent)
+                {
+                    Say($"{result.Person,-16} {result.Told,3} new picks sent, {result.AlreadyTold,3} told before{(result.Error is null ? "" : $"  ERROR {result.Error}")}");
+                }
+
+                return;
+            }
+
+            if (action == "link")
+            {
+                var bot = provider.GetRequiredService<TelegramBot>();
+                if (bot.IsConfigured)
+                {
+                    await bot.SyncLinksAsync(cancellationToken);
+                }
+
+                foreach (var person in people)
+                {
+                    var link = await bot.LinkAsync(person.Id, cancellationToken);
+                    Say($"{person.Name,-16} {link ?? "set Picks:Telegram:BotName first (see README)"}");
+                }
+
+                return;
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            Say(ex.Message);
+            return;
+        }
+
+        if (action == "outcomes")
+        {
+            var outcomes = provider.GetRequiredService<PickOutcomes>();
+            foreach (var person in people)
+            {
+                Say($"{person.Name,-16} {(await outcomes.SummarizeAsync(person.Id, cancellationToken)).Describe()}");
+            }
+
+            return;
+        }
+
+        var picks = provider.GetRequiredService<DailyPicks>();
+        foreach (var person in people)
+        {
+            var judged = await picks.PreviewAsync(person.Id, cancellationToken);
+            Say($"{person.Name}: {judged.Count(p => p.Judgement.Tell)} picks to tell, {judged.Count(p => !p.Judgement.Tell)} held back (fresh deals on catalogue brands: {judged.Count})");
+            foreach (var pick in judged)
+            {
+                var d = pick.Deal;
+                Say($"  {(pick.Judgement.Tell ? "TELL" : "hold"),-4} {pick.Judgement.Score,2}/10 {d.Price,8:0.00} {d.Currency} {pick.Brand,-14} {Cut(d.Title, 50),-50} " +
+                    (pick.Judgement.Tell ? $"size {pick.Size.Size}" : pick.Judgement.HeldBack));
+            }
+        }
+    }
+
+    private static string Cut(string value, int max) => value.Length > max ? value[..(max - 1)] + "…" : value;
 
     private async Task ImportNewslettersAsync(IServiceProvider provider, RunLogFile runLog, CancellationToken cancellationToken)
     {

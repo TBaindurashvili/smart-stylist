@@ -53,6 +53,18 @@ public sealed class FitAdvisor(WardrobeDbContext db)
             StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Size advice for many items for one person, reading their ledger once. The item's title stands in for the kind
+    /// of item, so the quiz's usual top, bottom or shoe size can apply.
+    /// </summary>
+    public async Task<Func<string, string, SizeAdvice>> ForPersonAsync(long profileId, CancellationToken cancellationToken)
+    {
+        var profile = await db.StyleProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == profileId, cancellationToken);
+        var byBrand = (await db.FitEntries.AsNoTracking().Where(e => e.ProfileId == profileId).ToListAsync(cancellationToken))
+            .ToLookup(e => Normalize(e.Brand));
+        return (brand, title) => Suggest(byBrand[Normalize(brand)].ToList(), brand, null, title, profile);
+    }
+
     public static SizeAdvice Suggest(IReadOnlyList<FitEntry> brandEntries, string brand, string? model, string? category, StyleProfile? profile = null)
     {
         if (brandEntries.Count == 0)

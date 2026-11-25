@@ -1,0 +1,77 @@
+@page "/picks"
+@rendermode InteractiveServer
+@inject DailyPicks Daily
+@inject PickOutcomes Outcomes
+@inject SmartStylist.Modules.Picks.Telegram.TelegramBot Bot
+
+<PageTitle>Picks · Smart Stylist</PageTitle>
+
+<h1>Picks</h1>
+<PersonPicker OnPicked="LoadAsync" />
+<p class="lead">
+    Deals from the last @DailyPicks.FreshDays days on quality-catalogue brands, judged for this person. A pick is told only
+    when price, style and size all say yes: the price is "buy now", something in it is their style, and we know their size.
+    Telegram gets each pick once, again only if it gets cheaper.
+</p>
+
+@if (_picks is null)
+{
+    <p>Loading…</p>
+}
+else
+{
+    <p class="card">
+        @if (_link is null)
+        {
+            <span>Telegram: set <code>Picks:Telegram:BotName</code> (see README) to get this person's link.</span>
+        }
+        else
+        {
+            <span>Telegram: <a href="@_link" target="_blank" rel="noopener">@_link</a>. Send it to them; they press Start once.</span>
+        }
+        <br /><span class="muted">@_outcome</span>
+    </p>
+
+    var told = _picks.Where(p => p.Judgement.Tell).ToList();
+    var held = _picks.Where(p => !p.Judgement.Tell).ToList();
+    <h2>Worth telling (@told.Count)</h2>
+    @if (told.Count == 0)
+    {
+        <p class="muted">Nothing today. That is the point: no message unless something is really worth it.</p>
+    }
+    @foreach (var pick in told)
+    {
+        <div class="card">
+            <a href="@pick.Deal.Url" target="_blank" rel="noopener"><strong>@pick.Deal.Title</strong></a>
+            <div class="muted">@pick.Brand · @pick.Deal.ShopName · <strong>@Money(pick.Deal.Price, pick.Deal.Currency)</strong> · score @pick.Judgement.Score/10</div>
+            <div class="reason">Price: @pick.Deal.Assessment.Reason</div>
+            <div class="reason">Style: @pick.Style.Reason</div>
+            <div class="reason">Size: <strong>@pick.Size.Size</strong>. @pick.Size.Reason</div>
+        </div>
+    }
+
+    <details>
+        <summary>Held back (@held.Count)</summary>
+        <ul>
+            @foreach (var pick in held)
+            {
+                <li><a href="@pick.Deal.Url" target="_blank" rel="noopener">@pick.Deal.Title</a> <span class="muted">(@pick.Brand, @Money(pick.Deal.Price, pick.Deal.Currency))</span>: @pick.Judgement.HeldBack</li>
+            }
+        </ul>
+    </details>
+}
+
+@code {
+    private IReadOnlyList<Pick>? _picks;
+    private string? _link;
+    private string? _outcome;
+
+    private async Task LoadAsync(SmartStylist.Modules.Wardrobe.Domain.StyleProfile person)
+    {
+        _picks = await Daily.PreviewAsync(person.Id, CancellationToken.None);
+        _link = await Bot.LinkAsync(person.Id, CancellationToken.None);
+        _outcome = (await Outcomes.SummarizeAsync(person.Id, CancellationToken.None)).Describe();
+    }
+
+    private static string Money(decimal amount, string currency) => $"{amount:0.00} {currency}";
+}

@@ -6,6 +6,8 @@ using SmartStylist.Modules.Catalog.Affiliates;
 using SmartStylist.Modules.Catalog.Collection;
 using SmartStylist.Modules.Catalog.Newsletters;
 using SmartStylist.Modules.Catalog.Persistence;
+using SmartStylist.Modules.Picks;
+using SmartStylist.Modules.Picks.Persistence;
 using SmartStylist.Modules.Wardrobe.Persistence;
 
 namespace SmartStylist.Worker;
@@ -17,6 +19,7 @@ internal sealed class RecurringJobsSetup(
     IOptions<CatalogOptions> options,
     IOptions<NewsletterOptions> newsletterOptions,
     IOptions<AwinOptions> awinOptions,
+    IOptions<PicksOptions> picksOptions,
     ILogger<RecurringJobsSetup> logger) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -24,6 +27,7 @@ internal sealed class RecurringJobsSetup(
         await using var scope = scopes.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<CatalogDbContext>().Database.MigrateAsync(cancellationToken);
         await scope.ServiceProvider.GetRequiredService<WardrobeDbContext>().Database.MigrateAsync(cancellationToken);
+        await scope.ServiceProvider.GetRequiredService<PicksDbContext>().Database.MigrateAsync(cancellationToken);
         var shops = await scope.ServiceProvider.GetRequiredService<ShopCatalogSync>().SyncAsync(cancellationToken);
 
         var router = scope.ServiceProvider.GetRequiredService<EgressRouter>();
@@ -99,6 +103,22 @@ internal sealed class RecurringJobsSetup(
                 awin.Cron,
                 new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
             logger.LogInformation("Scheduled Awin feed import ({Cron} UTC)", awin.Cron);
+        }
+
+        var picks = picksOptions.Value;
+        if (string.IsNullOrWhiteSpace(picks.Telegram.BotToken))
+        {
+            recurringJobs.RemoveIfExists(DailyPicksJob.RecurringJobId);
+            logger.LogInformation("Daily picks are off: Picks:Telegram:BotToken is empty");
+        }
+        else
+        {
+            recurringJobs.AddOrUpdate<DailyPicksJob>(
+                DailyPicksJob.RecurringJobId,
+                job => job.RunAsync(CancellationToken.None),
+                picks.Cron,
+                new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
+            logger.LogInformation("Scheduled daily picks on Telegram ({Cron} UTC)", picks.Cron);
         }
     }
 
