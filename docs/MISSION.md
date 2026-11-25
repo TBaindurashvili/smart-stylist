@@ -12,7 +12,9 @@ spend time shopping."*
 
 ## Who it is for
 
-- **Any shopper in Georgia** (men's and women's), then Armenia, then wider.
+- **Any shopper in Georgia** (men's and women's), then Armenia, then the region (Azerbaijan,
+  Kazakhstan, Uzbekistan, Kyrgyzstan, Moldova; Russian reaches most of it). Not Russia or Belarus
+  (sanctions). A new country must be configuration (currency, customs rule, forwarders), not code.
 - It is a **product**, not a personal tool. Temo is the first user; the first outside user
   comes **within 3 months (by end of February 2027)**.
 
@@ -49,21 +51,66 @@ Success after 3 months: **"I stopped buying things I don't wear"** and **"I save
   it themselves, never automate checkout, respect robots.txt and terms, rate-limit per site, never
   recommend splitting shipments to avoid customs, keep secrets in user-secrets.
 
+## Roadmap
+
+Product shape: the morning stylist routine Temo already uses, made repeatable for other people.
+One shared pool of deal sources (feeds, a shared brand inbox, page data, the extension) and a
+personal filter on top (style, sizes, "buy now or wait"). Coverage grows through **affiliate
+feeds**: be on every feed that exists. Networks accept sites with an audience, so the public
+deals channel is the engine for both users and feeds.
+
+Each stage has Temo's own steps (outside the code) and a check that says the stage is done.
+
+**Stage 1 - Foundation (December 2026)**
+- Temo: buy a domain for the site; open a public Telegram deals channel; create the shared
+  app Gmail and subscribe it to every catalogue shop's newsletter; apply to the networks the
+  research names, in its order.
+- Code: shared inbox import; networks research; post real deals to the channel.
+- Check: channel posts at least 3 real deals a week; shared inbox brings sale prices daily;
+  applications sent to every network on the list.
+
+**Stage 2 - Friends (January 2027)**
+- Temo: pick 2-3 friends whose style the catalogue covers; each fills in the style quiz.
+- Code: smart pick score and daily picks on Telegram (style quiz is done).
+- Check: each friend gets picks for 2+ weeks; "buy now" right 8 of 10 times (track every
+  call and its outcome).
+
+**Stage 3 - First outside users (February 2027)**
+- Temo: reapply to networks that declined, with channel and user numbers.
+- Code: sign-up and own profile without Temo's help.
+- Check: at least one person Temo did not set up uses it weekly; a second network accepted.
+
+**Stage 4 - Real cost and forwarders (spring 2027)**
+- Landed cost in GEL on every pick, then forwarder declarations and tracking. Then Armenia.
+
+**Direction check.** A weekly review (scheduled, Sunday) reads this file, the commits and the
+data, and writes one entry to [REVIEWS.md](REVIEWS.md): stage progress against its check,
+the signals below, and one sentence on whether we are still heading towards the mission. Signals:
+- Coverage: catalogue brands with a working price source; feeds/networks accepted.
+- Value: picks sent, "buy now" hit rate, money saved, items bought and worn.
+- Reach: channel followers, active users outside Temo.
+- Health: codebase size trend, CI green, Temo's hours that week.
+
 ## Next up
 
 Each item is one worker thread. When one is done, tick it, add what was learned, and keep this
 list at 3-5 items.
 
-1. **Smart pick and notification.** One score per item for a given person (quality, style fit (`StyleQuiz.Match`),
+1. **Shared brand inbox.** Import sale emails from one app Gmail subscribed to every catalogue
+   shop's newsletter (`NewsletterInbox: "shared"`), so outside users do not depend on Temo's Gmail.
+   Temo creates the account; the thread builds the import and lists which shops to subscribe.
+2. **Networks research.** Every affiliate network and aggregator that carries fashion feeds
+   (Awin, CJ, Rakuten, impact.com, FlexOffers, Partnerize, Skimlinks, Sovrn, ShopStyle and
+   others): requirements, whether Georgia is accepted, brands covered, feed or API access, and an
+   apply order. Output: a tracker in `docs/` with status and reapply dates.
+3. **Smart pick and notification.** One score per item for a given person (quality, style fit (`StyleQuiz.Match`),
    size confidence, price vs realistic low) and a rule for when it is worth telling them. First
-   channel: Telegram or daily email.
-2. **First outside user ready.** Sign-up, their own profile, and their own picks.
-3. **Close the catalogue's gaps.** About 9 brands (mostly women's) have no working price source and most others only have sale emails:
-   try the untried shops (`detect`, `probe`, extension), and decide on one shared app inbox subscribed to every
-   catalogue shop's newsletter (`NewsletterInbox: "shared"`), so outside users do not depend on Temo's Gmail.
+   channel: Telegram. Record every "buy now" and its outcome for the 8-of-10 check.
+4. **First outside user ready.** Sign-up, their own profile, and their own picks.
 
-Later: landed cost in GEL on every pick, forwarder declarations and tracking in the app,
-phone app, Armenia.
+Later: close the catalogue's gaps (about 9 brands, mostly women's, have no price source: try
+`detect`, `probe`, extension), landed cost in GEL, forwarder declarations and tracking, phone
+app, Armenia.
 
 ## Done
 
