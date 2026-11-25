@@ -3,12 +3,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SmartStylist.Modules.Wardrobe.Fit;
 using SmartStylist.Modules.Wardrobe.Persistence;
+using SmartStylist.Modules.Wardrobe.Style;
 
 namespace SmartStylist.Modules.Wardrobe;
 
 public static class WardrobeModule
 {
-    /// <summary>Registers the Wardrobe module: the fit ledger and size advice. Uses the same Postgres database, schema "wardrobe".</summary>
+    /// <summary>Registers the Wardrobe module: each person's style profile, fit ledger and size advice. Uses the same Postgres database, schema "wardrobe".</summary>
     public static IServiceCollection AddWardrobeModule(this IServiceCollection services, string connectionString)
     {
         services.AddDbContext<WardrobeDbContext>(options => options
@@ -22,6 +23,7 @@ public static class WardrobeModule
     {
         services.AddScoped<FitLedger>();
         services.AddScoped<FitAdvisor>();
+        services.AddScoped<StyleProfiles>();
         services.TryAddSingleton(TimeProvider.System);
         return services;
     }

@@ -1,0 +1,202 @@
+@page "/style/new"
+@page "/style/{Id:long}"
+@rendermode InteractiveServer
+@using SmartStylist.Modules.Catalog.Catalogue
+@using SmartStylist.Modules.Wardrobe.Domain
+@using SmartStylist.Modules.Wardrobe.Style
+@inject StyleProfiles Profiles
+@inject QualityCatalogue Catalogue
+@inject NavigationManager Nav
+
+<PageTitle>Style quiz · Smart Stylist</PageTitle>
+
+@if (_p is null)
+{
+    <p>@(_missing ? "No such profile." : "Loading…")</p>
+    return;
+}
+
+<h1>@(_p.Id == 0 ? "Style quiz" : $"{_p.Name}'s style")</h1>
+<p class="lead">Five short steps. Everything can be changed later: retake it whenever your style moves.</p>
+
+<section class="card">
+    <h2>1. Who is it for?</h2>
+    <div class="form-row">
+        <input placeholder="Name *" @bind="_p.Name" @bind:event="oninput" />
+        <select @bind="_p.ShopsFor" @bind:after="Redetect">
+            <option value="@ShopsFor.Men">Men's clothes</option>
+            <option value="@ShopsFor.Women">Women's clothes</option>
+            <option value="@ShopsFor.Both">Both</option>
+        </select>
+    </div>
+    <div class="form-row">
+        <input class="wide" placeholder="Where do you want your style to go? e.g. less sporty, more smart casual for work" @bind="_p.Goal" />
+    </div>
+</section>
+
+<section class="card">
+    <h2>2. Which brands feel like you?</h2>
+    <p class="muted">Love the ones you would wear, mark the ones that are not you, skip the rest. The style words below are read from your answers.</p>
+    <div class="brand-grid">
+        @foreach (var b in Brands)
+        {
+            var state = _loved.Contains(b.Name) ? "like" : _skipped.Contains(b.Name) ? "avoid" : "";
+            <div class="brand-card @state">
+                <strong>@b.Name</strong>
+                <div class="muted">@string.Join(", ", b.Styles)</div>
+                <div class="muted">@string.Join(", ", b.Categories)</div>
+                <div class="form-row">
+                    <button class="pill @(state == "like" ? "selected like" : "")" @onclick="() => Rate(b.Name, true)">Love</button>
+                    <button class="pill @(state == "avoid" ? "selected avoid" : "")" @onclick="() => Rate(b.Name, false)">Not me</button>
+                </div>
+            </div>
+        }
+    </div>
+</section>
+
+<section class="card">
+    <h2>3. Your style words</h2>
+    <p class="muted">Tap to cycle: like → not me → neutral. Changing brands above sets these again.</p>
+    <div class="summary">
+        @foreach (var w in StyleWords)
+        {
+            var state = Has(_p.LikedStyles, w) ? "like" : Has(_p.AvoidedStyles, w) ? "avoid" : "";
+            <button class="pill chip @state" @onclick="() => Cycle(w, _p.LikedStyles, _p.AvoidedStyles)">@w</button>
+        }
+    </div>
+</section>
+
+<section class="card">
+    <h2>4. What to buy, and what never</h2>
+    <p class="muted">Tap to cycle: want → never → neutral. "Never" items are not suggested at all.</p>
+    <div class="summary">
+        @foreach (var c in CategoryWords)
+        {
+            var state = Has(_p.WantedCategories, c) ? "like" : Has(_p.NoGo, c) ? "avoid" : "";
+            <button class="pill chip @state" @onclick="() => Cycle(c, _p.WantedCategories, _p.NoGo)">@c</button>
+        }
+    </div>
+    <div class="form-row">
+        <input class="wide" placeholder="Other no-go words, comma separated: logo, polyester, skinny, cropped" @bind="OtherNoGo" />
+    </div>
+</section>
+
+<section class="card">
+    <h2>5. Your usual sizes</h2>
+    <p class="muted">Used until the <a href="fit?person=@_p.Id">fit ledger</a> knows how a brand fits you.</p>
+    <div class="form-row">
+        <input placeholder="Tops, e.g. L" @bind="_p.TopSize" />
+        <input placeholder="Bottoms, e.g. W32 L32 or EU 38" @bind="_p.BottomSize" />
+        <input placeholder="Shoes, e.g. EU 44" @bind="_p.ShoeSize" />
+    </div>
+    <div class="form-row">
+        <button class="primary" @onclick="SaveAsync" disabled="@string.IsNullOrWhiteSpace(_p.Name)">Save profile</button>
+        @if (_message is not null) { <span class="@(_failed ? "error" : "muted")">@_message</span> }
+    </div>
+</section>
+
+<section class="card">
+    <h2>Catalogue brands that fit @(string.IsNullOrWhiteSpace(_p.Name) ? "you" : _p.Name)</h2>
+    @{ var matches = Brands.Select(b => (Brand: b, Match: StyleQuiz.Match(_p, b))).Where(m => !m.Match.Excluded && m.Match.Score > 0).OrderByDescending(m => m.Match.Score).ThenBy(m => m.Brand.Name).Take(10).ToList(); }
+    @if (matches.Count == 0)
+    {
+        <p class="muted">Love a few brands or pick style words to see matches.</p>
+    }
+    else
+    {
+        <ul>
+            @foreach (var m in matches) { <li><strong>@m.Brand.Name</strong> <span class="muted">@m.Match.Reason</span></li> }
+        </ul>
+    }
+</section>
+
+@code {
+    [Parameter] public long? Id { get; set; }
+
+    private IReadOnlyList<BrandCard> _cards = [];
+    private StyleProfile? _p;
+    private bool _missing, _failed;
+    private string? _message;
+    private readonly HashSet<string> _loved = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _skipped = new(StringComparer.OrdinalIgnoreCase);
+
+    private IEnumerable<BrandCard> Brands => _cards.Where(b => b.Dresses(_p!.ShopsFor));
+
+    private IEnumerable<string> StyleWords => ByFrequency(Brands.SelectMany(b => b.Styles)).Union(_p!.LikedStyles.Concat(_p.AvoidedStyles), StringComparer.OrdinalIgnoreCase);
+
+    private IEnumerable<string> CategoryWords => ByFrequency(Brands.SelectMany(b => b.Categories));
+
+    /// <summary>No-go words that are not catalogue categories, as one editable line.</summary>
+    private string OtherNoGo
+    {
+        get => string.Join(", ", _p!.NoGo.Where(n => !CategoryWords.Contains(n, StringComparer.OrdinalIgnoreCase)));
+        set => _p!.NoGo = _p.NoGo.Where(n => CategoryWords.Contains(n, StringComparer.OrdinalIgnoreCase))
+            .Concat((value ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)).ToList();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _cards = BrandCards.From(Catalogue);
+        _p = Id is null ? new StyleProfile { Name = "", ShopsFor = ShopsFor.Both } : await Profiles.GetAsync(Id.Value, CancellationToken.None);
+        _missing = _p is null;
+        _loved.Clear();
+        _skipped.Clear();
+        if (_p is not null)
+        {
+            _loved.UnionWith(_p.LovedBrands);
+            _skipped.UnionWith(_p.SkippedBrands);
+        }
+    }
+
+    private void Rate(string brand, bool love)
+    {
+        var (set, other) = love ? (_loved, _skipped) : (_skipped, _loved);
+        if (!set.Remove(brand))
+        {
+            set.Add(brand);
+            other.Remove(brand);
+        }
+
+        Redetect();
+    }
+
+    /// <summary>Reads style words and wanted categories from the brands rated so far (only brands for this person).</summary>
+    private void Redetect()
+    {
+        var visible = Brands.ToList();
+        var detected = StyleQuiz.Detect(visible.Where(b => _loved.Contains(b.Name)), visible.Where(b => _skipped.Contains(b.Name)));
+        _p!.LikedStyles = detected.Liked.ToList();
+        _p.AvoidedStyles = detected.Avoided.ToList();
+        _p.WantedCategories = detected.Categories.Where(c => !Has(_p.NoGo, c)).Take(5).ToList();
+    }
+
+    private static void Cycle(string word, List<string> yes, List<string> no)
+    {
+        if (Remove(yes, word)) no.Add(word);
+        else if (!Remove(no, word)) yes.Add(word);
+    }
+
+    private async Task SaveAsync()
+    {
+        var visible = Brands.Select(b => b.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _p!.LovedBrands = _loved.Where(visible.Contains).ToList();
+        _p.SkippedBrands = _skipped.Where(visible.Contains).ToList();
+        try
+        {
+            var saved = await Profiles.SaveAsync(_p, CancellationToken.None);
+            (_failed, _message) = (false, "Saved.");
+            if (Id is null) Nav.NavigateTo($"style/{saved.Id}");
+        }
+        catch (ArgumentException e)
+        {
+            (_failed, _message) = (true, e.Message);
+        }
+    }
+
+    private static IEnumerable<string> ByFrequency(IEnumerable<string> words) =>
+        words.GroupBy(w => w, StringComparer.OrdinalIgnoreCase).OrderByDescending(g => g.Count()).ThenBy(g => g.Key).Select(g => g.Key);
+
+    private static bool Has(IEnumerable<string> list, string word) => list.Contains(word, StringComparer.OrdinalIgnoreCase);
+
+    private static bool Remove(List<string> list, string word) => list.RemoveAll(w => string.Equals(w, word, StringComparison.OrdinalIgnoreCase)) > 0;
+}

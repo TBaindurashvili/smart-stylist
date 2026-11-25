@@ -18,6 +18,9 @@ public sealed class FitEntry
 {
     public long Id { get; set; }
 
+    /// <summary>Whose fit this is: a <see cref="StyleProfile"/>.</summary>
+    public long ProfileId { get; set; }
+
     public required string Brand { get; set; }
 
     /// <summary>The model or product line, e.g. "541 Athletic Taper" or "Nano X4". Empty when it applies brand-wide.</summary>

@@ -1,0 +1,36 @@
+@page "/style"
+@using SmartStylist.Modules.Wardrobe.Domain
+@using SmartStylist.Modules.Wardrobe.Style
+@inject StyleProfiles Profiles
+
+<PageTitle>Style profiles · Smart Stylist</PageTitle>
+
+<h1>Who are we dressing?</h1>
+<p class="lead">
+    Each person has their own style profile: what they like and avoid, what they never want and their sizes.
+    Picks, sizes and alerts are made for one person. Retake the quiz any time a style changes.
+</p>
+
+<p><a class="button" href="style/new">Take the style quiz</a></p>
+
+@if (_people is { Count: > 0 })
+{
+    <div class="brand-grid">
+        @foreach (var p in _people)
+        {
+            <div class="card">
+                <h2>@p.Name <span class="muted">· @p.ShopsFor</span></h2>
+                @if (p.LikedStyles.Count > 0) { <p>Likes: @string.Join(", ", p.LikedStyles)</p> }
+                @if (p.NoGo.Count > 0) { <p class="muted">Never: @string.Join(", ", p.NoGo)</p> }
+                <p class="muted">Sizes: @(string.Join(" · ", new[] { p.TopSize, p.BottomSize, p.ShoeSize }.Where(s => s is not null)) is { Length: > 0 } sizes ? sizes : "not set")</p>
+                <p><a href="style/@p.Id">Edit or retake</a> · <a href="fit?person=@p.Id">Fit ledger</a> · <a href="deals?person=@p.Id">Deals</a></p>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<StyleProfile>? _people;
+
+    protected override async Task OnInitializedAsync() => _people = await Profiles.ListAsync(CancellationToken.None);
+}

@@ -2,17 +2,21 @@
 @rendermode InteractiveServer
 @using SmartStylist.Modules.Wardrobe.Domain
 @using SmartStylist.Modules.Wardrobe.Fit
+@using SmartStylist.Modules.Wardrobe.Style
 @inject FitLedger Ledger
 @inject FitAdvisor Advisor
 
 <PageTitle>Fit ledger · Smart Stylist</PageTitle>
 
 <h1>What size fits you?</h1>
+<PersonPicker OnPicked="LoadAsync" />
 <p class="lead">
     Record how each item fitted after delivery. Size advice comes from these records first: the same model,
     then the same kind of item, then the brand. Your fit beats any size chart.
 </p>
 
+@if (_person is not null)
+{
 <section class="card">
     <h2>Which size should I buy?</h2>
     <div class="form-row">
@@ -50,8 +54,12 @@
         <button class="primary" @onclick="AddAsync" disabled="@(string.IsNullOrWhiteSpace(_brand) || string.IsNullOrWhiteSpace(_size))">Save</button>
     </div>
 </section>
+}
 
-@if (_entries is null)
+@if (_person is null)
+{
+}
+else if (_entries is null)
 {
     <p>Loading…</p>
 }
@@ -86,6 +94,7 @@ else
 }
 
 @code {
+    private StyleProfile? _person;
     private List<FitEntry>? _entries;
     private string? _brand, _model, _category, _size, _note;
     private FitVerdict _verdict = FitVerdict.Perfect;
@@ -93,24 +102,29 @@ else
     private string? _askBrand, _askModel, _askCategory;
     private SizeAdvice? _advice;
 
-    protected override async Task OnInitializedAsync() => _entries = await Ledger.ListAsync(CancellationToken.None);
+    private async Task LoadAsync(StyleProfile person)
+    {
+        _person = person;
+        _advice = null;
+        _entries = await Ledger.ListAsync(person.Id, CancellationToken.None);
+    }
 
     private async Task AddAsync()
     {
-        await Ledger.AddAsync(_brand!, _model, _category, _size!, _verdict, _note, _kept, CancellationToken.None);
+        await Ledger.AddAsync(_person!.Id, _brand!, _model, _category, _size!, _verdict, _note, _kept, CancellationToken.None);
         _model = _category = _size = _note = null;
         _verdict = FitVerdict.Perfect;
         _kept = true;
-        _entries = await Ledger.ListAsync(CancellationToken.None);
+        _entries = await Ledger.ListAsync(_person!.Id, CancellationToken.None);
     }
 
     private async Task RemoveAsync(long id)
     {
-        await Ledger.RemoveAsync(id, CancellationToken.None);
-        _entries = await Ledger.ListAsync(CancellationToken.None);
+        await Ledger.RemoveAsync(_person!.Id, id, CancellationToken.None);
+        _entries = await Ledger.ListAsync(_person!.Id, CancellationToken.None);
     }
 
-    private async Task AskAsync() => _advice = await Advisor.SuggestAsync(_askBrand!, _askModel, _askCategory, CancellationToken.None);
+    private async Task AskAsync() => _advice = await Advisor.SuggestAsync(_person!.Id, _askBrand!, _askModel, _askCategory, CancellationToken.None);
 
     private static string Label(FitVerdict verdict) => verdict switch
     {

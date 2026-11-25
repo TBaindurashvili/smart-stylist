@@ -1,0 +1,47 @@
+@using SmartStylist.Modules.Wardrobe.Domain
+@using SmartStylist.Modules.Wardrobe.Style
+@inject StyleProfiles Profiles
+@inject NavigationManager Nav
+
+@* Whose page this is. No sign-in yet, so the person is chosen here and kept in the address (?person=ID). *@
+@if (_people is { Count: 0 })
+{
+    <p class="card">Nobody has a style profile yet. <a href="style/new">Take the style quiz</a> first.</p>
+}
+else if (_people is not null)
+{
+    <div class="form-row person-picker">
+        <label class="muted" for="person">For</label>
+        <select id="person" value="@Selected?.Id" @onchange="Pick">
+            @foreach (var p in _people)
+            {
+                <option value="@p.Id">@p.Name</option>
+            }
+        </select>
+    </div>
+}
+
+@code {
+    private List<StyleProfile>? _people;
+
+    [SupplyParameterFromQuery(Name = "person")]
+    private long? PersonId { get; set; }
+
+    [Parameter]
+    public EventCallback<StyleProfile> OnPicked { get; set; }
+
+    public StyleProfile? Selected { get; private set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _people ??= await Profiles.ListAsync(CancellationToken.None);
+        var picked = _people.FirstOrDefault(p => p.Id == PersonId) ?? _people.FirstOrDefault();
+        if (picked is not null && picked.Id != Selected?.Id)
+        {
+            Selected = picked;
+            await OnPicked.InvokeAsync(picked);
+        }
+    }
+
+    private void Pick(ChangeEventArgs e) => Nav.NavigateTo(Nav.GetUriWithQueryParameter("person", long.Parse((string)e.Value!)));
+}

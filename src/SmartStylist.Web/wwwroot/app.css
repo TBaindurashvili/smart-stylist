@@ -92,3 +92,16 @@ button.link { font: inherit; font-size: 13px; border: 0; background: none; color
 .confidence-medium, .fit-snug, .fit-roomy { background: #EAF1DA; color: #4E6B17; }
 .confidence-low, .fit-toosmall, .fit-toobig { background: #F6E7CC; color: var(--warn); }
 .size-hint { font-size: 12px; margin-top: 2px; }
+
+/* Style quiz */
+a.button { display: inline-block; padding: 6px 16px; border-radius: 6px; background: var(--accent); color: #fff; text-decoration: none; }
+.brand-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.brand-grid .card { margin: 0; }
+.brand-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.brand-card .form-row { margin: 6px 0 0; }
+.brand-card.like { border-color: var(--accent); background: #F1F8F4; }
+.brand-card.avoid { opacity: .55; }
+.pill.like { background: #DCEFE6; color: var(--accent); }
+.pill.avoid { background: #F4D9D6; color: var(--bad); text-decoration: line-through; }
+.person-picker { max-width: 320px; }
+.person-picker select { flex: 1; }

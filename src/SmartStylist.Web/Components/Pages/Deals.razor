@@ -6,6 +6,7 @@
 <PageTitle>Deals · Smart Stylist</PageTitle>
 
 <h1>Buy now or wait?</h1>
+<PersonPicker OnPicked="SizesForAsync" />
 <p class="lead">
     Prices from the last @DealsReport.RecentDays days that are on sale or below their usual price, from sale emails,
     the browser extension, Awin product feeds and the daily collector. Each is judged by the product's own price history,
@@ -87,10 +88,15 @@ else
     private DealVerdict? _filter;
     private IReadOnlyDictionary<string, SmartStylist.Modules.Wardrobe.Fit.SizeAdvice> _sizes = new Dictionary<string, SmartStylist.Modules.Wardrobe.Fit.SizeAdvice>();
 
-    protected override async Task OnInitializedAsync()
+    private Task<IReadOnlyList<DealRow>>? _loading;
+
+    protected override async Task OnInitializedAsync() => _rows = await (_loading ??= Report.BuildAsync(CancellationToken.None));
+
+    /// <summary>Sizes are personal: shown for the person picked at the top.</summary>
+    private async Task SizesForAsync(SmartStylist.Modules.Wardrobe.Domain.StyleProfile person)
     {
-        _rows = await Report.BuildAsync(CancellationToken.None);
-        _sizes = await Advisor.SuggestForBrandsAsync(_rows.Select(r => r.Brand), CancellationToken.None);
+        var rows = await (_loading ??= Report.BuildAsync(CancellationToken.None));
+        _sizes = await Advisor.SuggestForBrandsAsync(person.Id, rows.Select(r => r.Brand), CancellationToken.None);
     }
 
     private void Toggle(DealVerdict verdict) => _filter = _filter == verdict ? null : verdict;

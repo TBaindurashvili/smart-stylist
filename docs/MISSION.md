@@ -54,14 +54,11 @@ Success after 3 months: **"I stopped buying things I don't wear"** and **"I save
 Each item is one worker thread. When one is done, tick it, add what was learned, and keep this
 list at 3-5 items.
 
-1. **Style profile and quiz.** A first quiz that captures a person's style, sizes and no-go
-   items, stored per user. This is the base for everything personal. Match on the catalogue's `Styles` and
-   `Categories` words.
-2. **Smart pick and notification.** One score per item for a given person (quality, style fit,
+1. **Smart pick and notification.** One score per item for a given person (quality, style fit (`StyleQuiz.Match`),
    size confidence, price vs realistic low) and a rule for when it is worth telling them. First
    channel: Telegram or daily email.
-3. **First outside user ready.** Sign-up, their own profile, and their own picks.
-4. **Close the catalogue's gaps.** About 9 brands (mostly women's) have no working price source and most others only have sale emails:
+2. **First outside user ready.** Sign-up, their own profile, and their own picks.
+3. **Close the catalogue's gaps.** About 9 brands (mostly women's) have no working price source and most others only have sale emails:
    try the untried shops (`detect`, `probe`, extension), and decide on one shared app inbox subscribed to every
    catalogue shop's newsletter (`NewsletterInbox: "shared"`), so outside users do not depend on Temo's Gmail.
 
@@ -69,6 +66,15 @@ Later: landed cost in GEL on every pick, forwarder declarations and tracking in 
 phone app, Armenia.
 
 ## Done
+
+- **Style profile and quiz** (2026-11-25). `/style`: one profile per person (Temo, then friends; men's, women's or
+  both), a five-step quiz (love / skip catalogue brands, style words read from them, want / never kinds of item and
+  free no-go words, usual sizes) and a live list of catalogue brands that fit the person. `StyleQuiz.Match` scores a
+  brand or item for a person; the next item builds on it. The fit ledger is now per person and falls back to the
+  quiz's usual size. Learned: the catalogue's style words are uneven ("classic" is on 17 of 41 brands, 14 words on
+  one brand), so loving brands says more than picking words; products have no kind-of-item field yet, so matching an
+  item uses its title words. No sign-in yet: the person is picked on each page (`?person=ID`); sign-up is the "First outside user" item.
+  Old fit records moved to a profile called "Me".
 
 - **Quality catalogue** (2026-11-25). `catalogue.json` in the Catalog module: 41 brands (36 for women, 37 for men) with
   categories, style words and why each is quality, and 51 shops (brand stores and retailers). Each brand shows its best

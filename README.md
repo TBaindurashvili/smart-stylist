@@ -10,9 +10,9 @@ a browser extension, judges whether a sale is real, and keeps a fit ledger.
 | Part | What it does |
 | --- | --- |
 | `src/Modules/Catalog` | The Catalog module: shops, products, daily price snapshots, collectors, the data-quality report. |
-| `src/Modules/Wardrobe` | The Wardrobe module: the fit ledger and size advice. |
+| `src/Modules/Wardrobe` | The Wardrobe module: each person's style profile, fit ledger and size advice. |
 | `src/SmartStylist.Worker` | Background host. Runs Hangfire and one daily price job per shop. Also a small CLI (`collect`, `report`). |
-| `src/SmartStylist.Web` | Blazor web app: data quality (`/`), the quality catalogue (`/catalogue`), deals (`/deals`), fit ledger (`/fit`), the extension and price-history APIs, the Hangfire dashboard. |
+| `src/SmartStylist.Web` | Blazor web app: data quality (`/`), the quality catalogue (`/catalogue`), style profiles and quiz (`/style`), deals (`/deals`), fit ledger (`/fit`), the extension and price-history APIs, the Hangfire dashboard. |
 | `tests/` | Parser tests with fixture pages, end-to-end tests against in-memory SQLite, and a few on real Postgres (need Docker). |
 
 It is a modular monolith: each business area becomes a module under `src/Modules` with its own
@@ -244,12 +244,23 @@ Page reading tries, in order: schema.org JSON-LD, microdata, the app state the p
 product + colour + size. Shops in `catalogue.json` can carry `AcceptsForwarder`, `AcceptsForeignCard` and `CheckoutNote`,
 learned from real orders; the data-quality page shows them with the detected platform.
 
+## Style profile and quiz
+
+Everything personal belongs to one person's **style profile** (no sign-in yet: Fit and Deals have a "For" picker that
+keeps `?person=ID` in the address). **Style** (`/style`) lists people; **Take the style quiz** (`/style/new`) has five steps:
+who it is for (men's / women's / both) and a style goal; love or skip catalogue brands; the style words read from those
+brands (tap to like / avoid); kinds of item to want or never buy plus free no-go words (`logo`, `polyester`); usual sizes.
+The page shows live which catalogue brands fit the person and why (`StyleQuiz.Match`: loved brand +2, each liked style
+word +1, each avoided one -2, a wanted kind of item +1; a skipped brand, a no-go word or the wrong audience excludes it).
+Retake the quiz whenever a style changes. Fits recorded before profiles existed now belong to a profile called "Me":
+rename it in the quiz.
+
 ## Fit ledger
 
 The **Fit** page (`/fit`) records how each item fitted after delivery: brand, model, kind of item, size, and
 too small / snug / perfect / roomy / too big. "Which size should I buy?" answers from these records: the same model
-first, then the same kind of item from the brand, then the brand. The Deals page shows "Your size" next to brands
-you have records for. Records live in the `wardrobe` schema (Wardrobe module), created by the worker or the web app on start.
+first, then the same kind of item from the brand, then the brand, then the person's usual size from the quiz (low confidence). The Deals page shows "Your size" next to
+brands the picked person has records for. Each person has their own ledger. Records live in the `wardrobe` schema (Wardrobe module), created by the worker or the web app on start.
 
 ## Prices from Awin product feeds
 

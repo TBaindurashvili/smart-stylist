@@ -18,41 +18,46 @@ public sealed record SizeAdvice(string? Size, FitConfidence Confidence, string R
 {
     public static SizeAdvice Unknown(string brand) =>
         new(null, FitConfidence.None, $"No fit records for {brand} yet. Use the size chart, then record how it fits.", []);
+
+    /// <summary>No records for the brand, but the person gave a usual size for this kind of item in the quiz.</summary>
+    public static SizeAdvice Usual(string brand, string size, string kind) =>
+        new(size, FitConfidence.Low, $"{size} is their usual {kind} size; no fit records for {brand} yet, so check the size chart.", []);
 }
 
-/// <summary>Suggests a size from the fit ledger: the same model first, then the same kind of item, then the brand.</summary>
+/// <summary>
+/// Suggests a size for one person from their fit ledger: the same model first, then the same kind of item, then the
+/// brand. With no records for the brand, falls back to their usual size from the style quiz.
+/// </summary>
 public sealed class FitAdvisor(WardrobeDbContext db)
 {
     private static readonly string[] LetterSizes = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "XXXL"];
+    private static readonly string[] ShoeWords = ["shoe", "sneaker", "trainer", "boot", "loafer", "sandal", "heel"];
+    private static readonly string[] BottomWords = ["jean", "denim", "trouser", "chino", "pant", "short", "skirt", "legging", "jogger"];
 
-    public async Task<SizeAdvice> SuggestAsync(string brand, string? model, string? category, CancellationToken cancellationToken)
+    public async Task<SizeAdvice> SuggestAsync(long profileId, string brand, string? model, string? category, CancellationToken cancellationToken)
     {
+        var profile = await db.StyleProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == profileId, cancellationToken);
+        var entries = await db.FitEntries.AsNoTracking().Where(e => e.ProfileId == profileId).ToListAsync(cancellationToken);
         var key = Normalize(brand);
-        if (key.Length == 0)
-        {
-            return SizeAdvice.Unknown(brand);
-        }
-
-        var entries = await db.FitEntries.AsNoTracking().ToListAsync(cancellationToken);
-        return Suggest(entries.Where(e => Normalize(e.Brand) == key).ToList(), brand, model, category);
+        return Suggest(entries.Where(e => key.Length > 0 && Normalize(e.Brand) == key).ToList(), brand, model, category, profile);
     }
 
-    /// <summary>All brands in the ledger, for matching a product's brand to fit advice.</summary>
-    public async Task<IReadOnlyDictionary<string, SizeAdvice>> SuggestForBrandsAsync(IEnumerable<string?> brands, CancellationToken cancellationToken)
+    /// <summary>Brand-level advice for many brands at once, for one person.</summary>
+    public async Task<IReadOnlyDictionary<string, SizeAdvice>> SuggestForBrandsAsync(long profileId, IEnumerable<string?> brands, CancellationToken cancellationToken)
     {
         var wanted = brands.Where(b => !string.IsNullOrWhiteSpace(b)).Select(b => b!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        var entries = await db.FitEntries.AsNoTracking().ToListAsync(cancellationToken);
+        var entries = await db.FitEntries.AsNoTracking().Where(e => e.ProfileId == profileId).ToListAsync(cancellationToken);
         return wanted.ToDictionary(
             b => b,
             b => Suggest(entries.Where(e => Normalize(e.Brand) == Normalize(b)).ToList(), b, null, null),
             StringComparer.OrdinalIgnoreCase);
     }
 
-    public static SizeAdvice Suggest(IReadOnlyList<FitEntry> brandEntries, string brand, string? model, string? category)
+    public static SizeAdvice Suggest(IReadOnlyList<FitEntry> brandEntries, string brand, string? model, string? category, StyleProfile? profile = null)
     {
         if (brandEntries.Count == 0)
         {
-            return SizeAdvice.Unknown(brand);
+            return UsualSize(profile, category) is { } usual ? SizeAdvice.Usual(brand, usual.Size, usual.Kind) : SizeAdvice.Unknown(brand);
         }
 
         var byModel = string.IsNullOrWhiteSpace(model) ? [] : brandEntries.Where(e => Same(e.Model, model)).ToList();
@@ -82,6 +87,21 @@ public sealed class FitAdvisor(WardrobeDbContext db)
         return next is null
             ? new SizeAdvice(null, FitConfidence.Low, $"{miss.Size} was {(step < 0 ? "too big" : "too small")} ({Describe(miss)}). Go one size {direction}.", newest)
             : new SizeAdvice(next, FitConfidence.Low, $"{miss.Size} was {(step < 0 ? "too big" : "too small")} ({Describe(miss)}), so try {next}.", newest);
+    }
+
+    /// <summary>The quiz's usual size for this kind of item. Needs a category: "Levi's" alone could be jeans or a jacket.</summary>
+    private static (string Size, string Kind)? UsualSize(StyleProfile? profile, string? category)
+    {
+        if (profile is null || string.IsNullOrWhiteSpace(category))
+        {
+            return null;
+        }
+
+        var c = category.ToLowerInvariant();
+        var (size, kind) = ShoeWords.Any(c.Contains) ? (profile.ShoeSize, "shoe")
+            : BottomWords.Any(c.Contains) ? (profile.BottomSize, "bottoms")
+            : (profile.TopSize, "tops");
+        return size is null ? null : (size, kind);
     }
 
     private static FitConfidence Lower(FitConfidence confidence) => confidence == FitConfidence.High ? FitConfidence.Medium : FitConfidence.Low;

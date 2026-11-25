@@ -10,16 +10,26 @@ A **modular monolith** in .NET 10: one PostgreSQL database, one schema per modul
 ```
 src/
   Modules/Catalog     shops, products, daily prices, every way a price gets in, deals   (schema: catalog)
-  Modules/Wardrobe    the fit ledger and size advice                                    (schema: wardrobe)
+  Modules/Wardrobe    each person: style profile + quiz matching, fit ledger, size advice (schema: wardrobe)
   SmartStylist.Worker Hangfire jobs + the CLI (collect, newsletters, awin, wayback, watch...)
-  SmartStylist.Web    Blazor pages (/, /deals, /fit, /shops/{key}), the extension and price-history APIs
+  SmartStylist.Web    Blazor pages (/, /style, /deals, /fit, /shops/{key}), the extension and price-history APIs
 extension/            Chrome extension: sends the structured data of a shop page you open to the web app
 tests/                xUnit per module; SQLite in memory, plus a few Postgres tests via Testcontainers (need Docker)
 ```
 
 Modules do not reference each other. A module exposes `Add<Name>Module(...)` and its services; hosts never touch
-its tables directly. New business areas (style profile, picks, landed cost, forwarders) become new modules with
-their own schema rather than growing Catalog.
+its tables directly. New business areas (picks, landed cost, forwarders) become new modules with their own schema
+rather than growing Catalog. The style profile went into Wardrobe instead of its own module: it is the person the fit
+ledger belongs to, and the fit ledger needs its id.
+
+## The person (Wardrobe)
+
+`StyleProfile` is one person (no sign-in yet; pages pick the person with `?person=ID` via `PersonPicker`). It holds
+liked / avoided style words, wanted kinds of item, no-go words, loved / skipped brands and usual sizes. Every `FitEntry`
+belongs to a profile. `Style/StyleQuiz` is pure: `Detect` reads style words from loved and skipped brands, `Match`
+scores a brand (and optionally an item's words) for a profile. Wardrobe does not see the catalogue: the web host turns
+catalogue brands into `BrandCard`s (`BrandCards.From`). `FitAdvisor` falls back to the quiz's usual size when the
+ledger has nothing for a brand and the kind of item is known.
 
 ## The price pipeline (Catalog)
 
