@@ -13,13 +13,10 @@ public sealed class PriceCollectionService
     // get their watched pages visited a few times a day instead (BrowserWatchService).
     private static readonly CollectorStrategy[] AutoOrder = [CollectorStrategy.Shopify, CollectorStrategy.SitemapJsonLd];
 
-    /// <summary>Earlier days a SKU's usual price is taken from, for the sanity check.</summary>
-    private const int UsualPriceDays = 90;
-
     private readonly CatalogDbContext _db;
     private readonly IReadOnlyDictionary<CollectorStrategy, IShopCollector> _collectors;
     private readonly IOptions<CatalogOptions> _options;
-    private readonly PriceSanityCheck _sanity;
+    private readonly PriceWriter _writer;
     private readonly TimeProvider _time;
     private readonly ILogger<PriceCollectionService> _logger;
 
@@ -27,14 +24,14 @@ public sealed class PriceCollectionService
         CatalogDbContext db,
         IEnumerable<IShopCollector> collectors,
         IOptions<CatalogOptions> options,
-        PriceSanityCheck sanity,
+        PriceWriter writer,
         TimeProvider time,
         ILogger<PriceCollectionService> logger)
     {
         _db = db;
         _collectors = collectors.ToDictionary(c => c.Strategy);
         _options = options;
-        _sanity = sanity;
+        _writer = writer;
         _time = time;
         _logger = logger;
     }
@@ -108,7 +105,10 @@ public sealed class PriceCollectionService
                         shop.DetectedStrategy = strategy;
                     }
 
-                    await SaveAsync(shop, run, result.Products, cancellationToken);
+                    var written = await _writer.WriteAsync(shop, result.Products, PriceSource.Crawl, cancellationToken);
+                    run.ProductsSeen = written.ProductsSeen;
+                    run.SnapshotsWritten = written.PricesWritten;
+                    run.PricesRejected = written.PricesRefused;
                     run.Status = RunStatus.Succeeded;
                     break;
                 }
@@ -143,7 +143,7 @@ public sealed class PriceCollectionService
         finally
         {
             run.FinishedAt = _time.GetUtcNow();
-            run.Error = errors.Count == 0 ? null : Truncate(string.Join(" | ", errors), 4000);
+            run.Error = errors.Count == 0 ? null : string.Join(" | ", errors).Truncate(4000);
             await _db.SaveChangesAsync(CancellationToken.None);
         }
 
@@ -165,89 +165,4 @@ public sealed class PriceCollectionService
             : AutoOrder;
     }
 
-    private async Task SaveAsync(Shop shop, CollectionRun run, IReadOnlyList<ScrapedProduct> scraped, CancellationToken cancellationToken)
-    {
-        var now = _time.GetUtcNow();
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
-
-        var unique = scraped.GroupBy(p => p.ExternalId).Select(g => g.First()).ToList();
-        var externalIds = unique.Select(p => p.ExternalId).ToList();
-        var existing = await _db.Products
-            .Where(p => p.ShopId == shop.Id && externalIds.Contains(p.ExternalId))
-            .ToDictionaryAsync(p => p.ExternalId, cancellationToken);
-
-        var existingIds = existing.Values.Select(p => p.Id).ToList();
-        var todaysSnapshots = await _db.PriceSnapshots
-            .Where(s => s.ObservedOn == today && existingIds.Contains(s.ProductId))
-            .ToDictionaryAsync(s => (s.ProductId, s.VariantKey), cancellationToken);
-        var usualFrom = today.AddDays(-UsualPriceDays);
-        var usualPrices = (await _db.PriceSnapshots
-                .Where(s => s.ObservedOn < today && s.ObservedOn >= usualFrom && existingIds.Contains(s.ProductId))
-                .Select(s => new { s.ProductId, s.VariantKey, s.Currency, s.Price })
-                .ToListAsync(cancellationToken))
-            .GroupBy(s => (s.ProductId, s.VariantKey, s.Currency))
-            .ToDictionary(g => g.Key, g => PriceSanityCheck.Median(g.Select(s => s.Price).ToList()));
-
-        foreach (var item in unique)
-        {
-            if (!existing.TryGetValue(item.ExternalId, out var product))
-            {
-                product = new Product
-                {
-                    ShopId = shop.Id,
-                    ExternalId = Truncate(item.ExternalId, 500),
-                    Url = item.Url,
-                    Title = item.Title,
-                    FirstSeenAt = now,
-                };
-                _db.Products.Add(product);
-            }
-
-            product.Url = Truncate(item.Url, 2000);
-            // An API that gives prices but no name (Uniqlo's) keeps the title the product already has.
-            product.Title = string.IsNullOrWhiteSpace(item.Title)
-                ? string.IsNullOrWhiteSpace(product.Title) ? Truncate(item.ExternalId, 500) : product.Title
-                : Truncate(item.Title, 500);
-            product.Brand = item.Brand is null ? null : Truncate(item.Brand, 200);
-            product.ImageUrl = item.ImageUrl is null || item.ImageUrl.Length > 2000 ? null : item.ImageUrl;
-            product.LastSeenAt = now;
-
-            foreach (var offer in item.Offers.GroupBy(o => o.VariantKey).Select(g => g.First()))
-            {
-                var variantKey = Truncate(offer.VariantKey, 200);
-                var currency = offer.Currency.Length == 3 ? offer.Currency : shop.Currency;
-                var usual = product.Id == 0 ? null : usualPrices.GetValueOrDefault((product.Id, variantKey, currency));
-                if (_sanity.Reject(offer with { Currency = currency }, item.Title, usual) is { } reason)
-                {
-                    if (run.PricesRejected++ < 5)
-                    {
-                        _logger.LogWarning("{Shop}: refused {Url} {Variant}: {Reason}", shop.Key, item.Url, variantKey, reason);
-                    }
-
-                    continue;
-                }
-
-                if (product.Id == 0 || !todaysSnapshots.TryGetValue((product.Id, variantKey), out var snapshot))
-                {
-                    snapshot = new PriceSnapshot { Product = product, VariantKey = variantKey, Currency = offer.Currency, ObservedOn = today };
-                    _db.PriceSnapshots.Add(snapshot);
-                }
-
-                snapshot.SizeLabel = offer.SizeLabel is null ? null : Truncate(offer.SizeLabel, 100);
-                snapshot.Colour = offer.Colour is null ? null : Truncate(offer.Colour, 100);
-                snapshot.Price = offer.Price;
-                snapshot.ListPrice = offer.ListPrice;
-                snapshot.Currency = currency;
-                snapshot.InStock = offer.InStock;
-                snapshot.CapturedAt = now;
-                run.SnapshotsWritten++;
-            }
-
-            run.ProductsSeen++;
-        }
-
-        await _db.SaveChangesAsync(cancellationToken);
-    }
-
-    private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
 }

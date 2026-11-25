@@ -2,6 +2,7 @@ using System.IO.Compression;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SmartStylist.Modules.Catalog.Collection;
 using SmartStylist.Modules.Catalog.Domain;
 using SmartStylist.Modules.Catalog.Persistence;
 
@@ -16,14 +17,12 @@ public sealed record AwinFeedResult(AwinFeedInfo Feed, string? ShopKey, int Prod
 public sealed class AwinFeedImportService(
     HttpClient http,
     CatalogDbContext db,
+    PriceWriter writer,
     IOptions<AwinOptions> awinOptions,
     IOptions<CatalogOptions> catalogOptions,
-    TimeProvider time,
     ILogger<AwinFeedImportService> logger)
 {
     public const string ClientName = "awin";
-
-    private const int SaveEvery = 500;
 
     private AwinOptions Options => awinOptions.Value;
 
@@ -84,7 +83,7 @@ public sealed class AwinFeedImportService(
         }
 
         var shop = await ShopForAsync(feed, products[0], cancellationToken);
-        var prices = await SaveAsync(shop, products, cancellationToken);
+        var prices = (await writer.WriteAsync(shop, products.Select(p => p.Product).ToList(), PriceSource.AffiliateFeed, cancellationToken)).PricesWritten;
         logger.LogInformation("Awin feed {FeedId} ({Advertiser}): {Products} products, {Prices} prices for shop {Shop}",
             feed.FeedId, feed.AdvertiserName, products.Count, prices, shop.Key);
         return new AwinFeedResult(feed, shop.Key, products.Count, prices, null);
@@ -109,7 +108,7 @@ public sealed class AwinFeedImportService(
         shop = new Shop
         {
             Key = key,
-            Name = Truncate(string.IsNullOrWhiteSpace(feed.AdvertiserName) ? sample.AdvertiserName : feed.AdvertiserName, 200),
+            Name = (string.IsNullOrWhiteSpace(feed.AdvertiserName) ? sample.AdvertiserName : feed.AdvertiserName).Truncate(200),
             BaseUrl = $"{url.Scheme}://{url.Host}",
             Currency = currency.Length == 3 ? currency : "USD",
             Enabled = false,
@@ -117,70 +116,6 @@ public sealed class AwinFeedImportService(
         db.Shops.Add(shop);
         await db.SaveChangesAsync(cancellationToken);
         return shop;
-    }
-
-    private async Task<int> SaveAsync(Shop shop, IReadOnlyList<AwinProduct> products, CancellationToken cancellationToken)
-    {
-        var now = time.GetUtcNow();
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
-        var existing = await db.Products.Where(p => p.ShopId == shop.Id).ToListAsync(cancellationToken);
-        var byId = existing.GroupBy(p => p.ExternalId).ToDictionary(g => g.Key, g => g.First());
-        var byUrl = existing.GroupBy(p => p.Url).ToDictionary(g => g.Key, g => g.First());
-        var todays = (await db.PriceSnapshots.Where(s => s.Product.ShopId == shop.Id && s.ObservedOn == today).ToListAsync(cancellationToken))
-            .ToDictionary(s => (s.ProductId, s.VariantKey));
-
-        var prices = 0;
-        var pending = 0;
-        foreach (var item in products)
-        {
-            var scraped = item.Product;
-            var externalId = Truncate(scraped.ExternalId, 500);
-            var url = Truncate(scraped.Url, 2000);
-
-            // The extension or a sale email may have saved the same product under its page URL.
-            var product = byId.GetValueOrDefault(externalId) ?? byUrl.GetValueOrDefault(url);
-            if (product is null)
-            {
-                product = new Product { ShopId = shop.Id, ExternalId = externalId, Url = url, Title = "", FirstSeenAt = now };
-                db.Products.Add(product);
-                byId[externalId] = product;
-            }
-
-            product.Url = url;
-            product.Title = Truncate(scraped.Title, 500);
-            product.Brand = scraped.Brand is null ? product.Brand : Truncate(scraped.Brand, 200);
-            product.ImageUrl = scraped.ImageUrl is { Length: <= 2000 } ? scraped.ImageUrl : product.ImageUrl;
-            product.LastSeenAt = now;
-
-            foreach (var offer in scraped.Offers.GroupBy(o => o.VariantKey).Select(g => g.First()))
-            {
-                var variantKey = Truncate(offer.VariantKey, 200);
-                if (product.Id == 0 || !todays.TryGetValue((product.Id, variantKey), out var snapshot))
-                {
-                    snapshot = new PriceSnapshot { Product = product, VariantKey = variantKey, ObservedOn = today, Currency = shop.Currency };
-                    db.PriceSnapshots.Add(snapshot);
-                }
-
-                snapshot.SizeLabel = offer.SizeLabel is null ? null : Truncate(offer.SizeLabel, 100);
-                snapshot.Colour = offer.Colour is null ? null : Truncate(offer.Colour, 100);
-                snapshot.Price = offer.Price;
-                snapshot.ListPrice = offer.ListPrice;
-                snapshot.Currency = offer.Currency.Length == 3 ? offer.Currency : shop.Currency;
-                snapshot.InStock = offer.InStock;
-                snapshot.CapturedAt = now;
-                snapshot.Source = PriceSource.AffiliateFeed;
-                prices++;
-            }
-
-            if (++pending >= SaveEvery)
-            {
-                await db.SaveChangesAsync(cancellationToken);
-                pending = 0;
-            }
-        }
-
-        await db.SaveChangesAsync(cancellationToken);
-        return prices;
     }
 
     private void RequireApiKey()
@@ -192,6 +127,4 @@ public sealed class AwinFeedImportService(
                 "The key is in Awin under Toolbox → Create-a-Feed.");
         }
     }
-
-    private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
 }

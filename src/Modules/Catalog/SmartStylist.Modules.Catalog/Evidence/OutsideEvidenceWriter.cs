@@ -29,7 +29,7 @@ internal static class OutsideEvidenceWriter
     public static async Task<Product> FindOrAddProductAsync(CatalogDbContext db, Shop shop, string url, string? title, DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        url = Truncate(url, MaxUrl);
+        url = url.Truncate(MaxUrl);
         var product = await db.Products.FirstOrDefaultAsync(p => p.ShopId == shop.Id && (p.Url == url || p.ExternalId == url), cancellationToken);
         if (product is not null)
         {
@@ -39,9 +39,9 @@ internal static class OutsideEvidenceWriter
         product = new Product
         {
             ShopId = shop.Id,
-            ExternalId = Truncate(url, 500),
+            ExternalId = url.Truncate(500),
             Url = url,
-            Title = Truncate(string.IsNullOrWhiteSpace(title) ? url : title, 500),
+            Title = (string.IsNullOrWhiteSpace(title) ? url : title).Truncate(500),
             FirstSeenAt = now,
             LastSeenAt = now,
         };
@@ -66,7 +66,7 @@ internal static class OutsideEvidenceWriter
         int added = 0, rejected = 0;
         foreach (var offer in offers.GroupBy(o => o.VariantKey).Select(g => g.First()))
         {
-            var key = Truncate(offer.VariantKey, 200);
+            var key = offer.VariantKey.Truncate(200);
             if (taken.Contains(key))
             {
                 continue;
@@ -86,8 +86,8 @@ internal static class OutsideEvidenceWriter
             {
                 ProductId = product.Id,
                 VariantKey = key,
-                SizeLabel = offer.SizeLabel is null ? null : Truncate(offer.SizeLabel, 100),
-                Colour = offer.Colour is null ? null : Truncate(offer.Colour, 100),
+                SizeLabel = offer.SizeLabel?.Truncate(100),
+                Colour = offer.Colour?.Truncate(100),
                 ObservedOn = day,
                 Price = offer.Price,
                 ListPrice = offer.ListPrice,
@@ -103,5 +103,4 @@ internal static class OutsideEvidenceWriter
         return (added, rejected);
     }
 
-    public static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
 }

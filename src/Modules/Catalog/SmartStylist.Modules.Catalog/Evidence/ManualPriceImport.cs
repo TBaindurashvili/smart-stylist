@@ -344,8 +344,8 @@ public sealed partial class ManualPriceImport
     {
         var shop = new Shop
         {
-            Key = OutsideEvidenceWriter.Truncate($"manual-{Slug(store)}", 64),
-            Name = OutsideEvidenceWriter.Truncate(store, 200),
+            Key = $"manual-{Slug(store)}".Truncate(64),
+            Name = store.Truncate(200),
             BaseUrl = url is null ? $"https://{Slug(store)}.invalid" : $"{url.Scheme}://{url.Host}",
             Currency = currency.Length == 3 ? currency : "USD",
             Enabled = false,
@@ -369,9 +369,9 @@ public sealed partial class ManualPriceImport
         product = new Product
         {
             ShopId = shop.Id,
-            ExternalId = OutsideEvidenceWriter.Truncate($"manual:{lower}", 500),
+            ExternalId = $"manual:{lower}".Truncate(500),
             Url = shop.BaseUrl,
-            Title = OutsideEvidenceWriter.Truncate(title, 500),
+            Title = title.Truncate(500),
             FirstSeenAt = now,
             LastSeenAt = now,
         };

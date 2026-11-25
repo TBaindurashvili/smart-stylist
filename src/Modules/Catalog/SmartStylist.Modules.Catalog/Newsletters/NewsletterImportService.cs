@@ -65,9 +65,9 @@ public sealed partial class NewsletterImportService
             {
                 email = new NewsletterEmail
                 {
-                    MessageId = Truncate(message.MessageId, 500),
-                    From = Truncate(message.FromAddress, 320),
-                    Subject = Truncate(message.Subject, 500),
+                    MessageId = message.MessageId.Truncate(500),
+                    From = message.FromAddress.Truncate(320),
+                    Subject = message.Subject.Truncate(500),
                 };
                 _db.NewsletterEmails.Add(email);
             }
@@ -101,7 +101,7 @@ public sealed partial class NewsletterImportService
                 _logger.LogWarning("Could not read email '{Subject}' from {From}: {Error}", message.Subject, message.FromAddress, ex.Message);
                 DetachPrices();
                 email.Status = NewsletterStatus.Failed;
-                email.Error = Truncate(ex.Message, 4000);
+                email.Error = ex.Message.Truncate(4000);
             }
 
             email.ProcessedAt = _time.GetUtcNow();
@@ -129,7 +129,7 @@ public sealed partial class NewsletterImportService
         email.ProductsFound = extraction.Products.Count;
         email.ProductsRejected = rejected;
         email.SaleEndsOn = ExtractionGuard.SaleEnd(extraction.SaleEndsOn);
-        email.PromoCode = string.IsNullOrWhiteSpace(extraction.PromoCode) ? null : Truncate(extraction.PromoCode.Trim(), 100);
+        email.PromoCode = string.IsNullOrWhiteSpace(extraction.PromoCode) ? null : extraction.PromoCode.Trim().Truncate(100);
         email.PricesWritten = offers.Count == 0 ? 0 : await SaveAsync(shop, domains, message.ReceivedAt, offers, cancellationToken);
         email.Status = email.PricesWritten > 0 ? NewsletterStatus.Priced : NewsletterStatus.NoPrices;
     }
@@ -153,7 +153,7 @@ public sealed partial class NewsletterImportService
             // A product page URL identifies the product across emails and crawls; without one, the title has to do.
             var externalId = page?.AbsoluteUri ?? "email:" + SpacesRegex().Replace(offer.Title.ToLowerInvariant(), " ");
             var url = page?.AbsoluteUri ?? offer.LinkUrl ?? shop.BaseUrl;
-            items.Add((offer, Truncate(externalId, 500), url));
+            items.Add((offer, externalId.Truncate(500), url));
         }
 
         var unique = items.GroupBy(i => i.ExternalId).Select(g => g.First()).ToList();
@@ -168,7 +168,7 @@ public sealed partial class NewsletterImportService
             var product = products.FirstOrDefault(p => p.ExternalId == externalId) ?? products.FirstOrDefault(p => p.Url == externalId);
             if (product is null)
             {
-                product = new Product { ShopId = shop.Id, ExternalId = externalId, Url = Truncate(url, 2000), Title = Truncate(offer.Title, 500), FirstSeenAt = receivedAt, LastSeenAt = receivedAt };
+                product = new Product { ShopId = shop.Id, ExternalId = externalId, Url = url.Truncate(2000), Title = offer.Title.Truncate(500), FirstSeenAt = receivedAt, LastSeenAt = receivedAt };
                 _db.Products.Add(product);
                 products.Add(product);
             }
@@ -218,7 +218,6 @@ public sealed partial class NewsletterImportService
         }
     }
 
-    private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
 
     [GeneratedRegex(@"\s+")]
     private static partial Regex SpacesRegex();

@@ -81,15 +81,13 @@ public static class CatalogModule
             sp.GetRequiredService<CatalogDbContext>(),
             sp.GetServices<IShopCollector>(),
             sp.GetRequiredService<IOptions<CatalogOptions>>(),
-            sp.GetRequiredService<PriceSanityCheck>(),
+            sp.GetRequiredService<PriceWriter>(),
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PriceCollectionService>>()));
         services.AddScoped<ShopCatalogSync>();
         services.AddScoped(sp => new ProductPageProbe(sp.GetRequiredService<HttpPageFetcher>(), sp.GetRequiredService<BrowserPageFetcher>()));
-        services.AddScoped(sp => new PageCaptureService(
-            sp.GetRequiredService<CatalogDbContext>(),
-            sp.GetRequiredService<PriceSanityCheck>(),
-            sp.GetRequiredService<TimeProvider>()));
+        services.AddScoped<PriceWriter>();
+        services.AddScoped<PageCaptureService>();
         services.AddScoped(sp => new BrowserWatchService(
             sp.GetRequiredService<CatalogDbContext>(),
             sp.GetRequiredService<BrowserPageFetcher>(),
