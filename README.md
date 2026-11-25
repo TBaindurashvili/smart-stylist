@@ -214,7 +214,10 @@ which is most of the archived history for Shopify and Patagonia pages.
 
 Columns are found by name: `price` is required ("~~$98~~ $54" and "$54 (was $98)" also give the was price),
 plus `date` (or `--date`), and a page address in a `url` column or as a link in any cell. Without an address a
-row needs a `shop` and a `title`/`item`. `list_price`/`was`, `size`, `colour` and `currency` are optional. Dates
+row needs a `shop`/`store` and a `title`/`item` (or `brand` + `model`, with `colour` and `style_code` added to the
+title). `list_price`/`was`, `size`, `colour` and `currency` are optional; `price_after_code` is read but not stored.
+A store that is not one of the shops (REI, END.) gets its own disabled shop (`manual-rei`) so its prices still
+count; "Levi's US" matches the Levi's shop when the currency agrees. Dates
 like `2026-10-14`, `Oct 14 2026` or `Nov 18` (the latest such day). Keepa covers Amazon price history but needs a paid
 API key, so it is not wired in.
 

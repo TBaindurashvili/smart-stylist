@@ -96,6 +96,36 @@ public class OutsideEvidenceTests
     }
 
     [Fact]
+    public async Task Imports_the_stylist_tables_with_any_store()
+    {
+        await using var host = new TestHost(TaylorStitch);
+        await host.InitializeAsync();
+        var csv = """
+            date,brand,model,colour,style_code,store,currency,list_price,sale_price,price_after_code,url,size
+            2026-11-08,Fila,Giovanni,White,,REI,USD,90,54,45,,10
+            2026-11-09,Fila,Giovanni,White,,REI,USD,90,50,,,10
+            2026-11-10,Taylor Stitch,The Jack,Navy,,Taylor Stitch US,USD,128,98,,,M
+            2026-11-10,,,,,,USD,10,8,,,
+            """;
+
+        var result = await host.InScopeAsync(sp => sp.GetRequiredService<ManualPriceImport>().ImportAsync(new StringReader(csv), CancellationToken.None));
+
+        Assert.Equal(4, result.Rows);
+        Assert.Equal(3, result.PricesAdded);
+        Assert.Single(result.Skipped);
+        await host.InScopeAsync(async sp =>
+        {
+            var db = sp.GetRequiredService<CatalogDbContext>();
+            var rei = await db.Shops.SingleAsync(s => s.Key == "manual-rei");
+            Assert.False(rei.Enabled);
+            Assert.Equal(1, await db.Products.CountAsync(p => p.ShopId == rei.Id && p.Title == "Fila Giovanni White"));
+            var jack = await db.Products.Include(p => p.Shop).SingleAsync(p => p.Title == "Taylor Stitch The Jack Navy");
+            Assert.Equal("taylorstitch", jack.Shop.Key);
+            return 0;
+        });
+    }
+
+    [Fact]
     public void Outside_evidence_gives_a_less_certain_verdict_before_two_weeks_of_own_prices()
     {
         var earlier = new List<PricePoint>

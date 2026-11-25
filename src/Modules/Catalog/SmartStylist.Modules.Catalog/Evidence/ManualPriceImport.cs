@@ -15,8 +15,11 @@ public sealed record ManualImportResult(int Rows, int PricesAdded, IReadOnlyList
 /// Wardrobe doc. Takes a CSV with a header row, or the Markdown tables pasted as they are (several tables, headings
 /// and other text in between are fine). Columns are found by name: date, url (or a link in any cell), price
 /// ("~~$98~~ $54" and "$54 (was $98)" give both prices), and optional title/item, shop, currency, was/list_price,
-/// size, colour. Without a page address the row needs a shop and a title. Stored as PriceSource.ManualHistory,
-/// the least certain outside evidence.
+/// size, colour, brand, model, style_code. Without a title, brand + model + colour + style code make one. A store that
+/// is not one of the shops ("REI", "END. UK") gets its own disabled shop ("manual-rei") so its prices still count;
+/// "Levi's US" matches the shop named Levi's with the same currency. price_after_code stays in the file only: it
+/// depends on a code or cart condition, not the shelf price. Stored as PriceSource.ManualHistory, the least certain
+/// outside evidence.
 /// </summary>
 public sealed partial class ManualPriceImport
 {
@@ -41,6 +44,8 @@ public sealed partial class ManualPriceImport
         ["regular"] = "list_price", ["regular_price"] = "list_price", ["retail"] = "list_price",
         ["shop"] = "shop", ["store"] = "shop", ["retailer"] = "shop", ["site"] = "shop",
         ["size"] = "size", ["colour"] = "colour", ["color"] = "colour", ["currency"] = "currency",
+        ["brand"] = "brand", ["model"] = "model", ["style_code"] = "style_code", ["style"] = "style_code", ["sku"] = "style_code",
+        ["price_after_code"] = "price_after_code",
     };
 
     private readonly CatalogDbContext _db;
@@ -86,22 +91,30 @@ public sealed partial class ManualPriceImport
             }
 
             var (title, linkInTitle) = SplitLink(Get("title"));
+            title ??= ComposeTitle(Get("brand"), Get("model"), Get("colour"), Get("style_code"));
             var url = Link(Get("url")) ?? linkInTitle ?? row.Cells.Values.Select(Link).FirstOrDefault(u => u is not null);
 
+            var currencyCell = Get("currency")?.ToUpperInvariant();
+            var shopKey = ShopKey(shops, Get("shop"), currencyCell);
             Shop? shop = null;
             if (url is not null)
             {
-                shop = await OutsideEvidenceWriter.FindShopAsync(_db, url, ShopKey(shops, Get("shop")), cancellationToken);
+                shop = await OutsideEvidenceWriter.FindShopAsync(_db, url, shopKey, cancellationToken);
             }
-            else if (ShopKey(shops, Get("shop")) is { } key)
+            else if (shopKey is { } key)
             {
                 shop = shops.First(s => s.Key == key);
+            }
+
+            if (shop is null && Get("shop") is { } store)
+            {
+                shop = await AddStoreShopAsync(shops, StripMarkup(store), url, currencyCell ?? "USD", cancellationToken);
             }
 
             if (shop is null)
             {
                 skipped.Add(url is null
-                    ? $"{line}: no page address, and shop '{Get("shop")}' is not one of the shops in appsettings.json"
+                    ? $"{line}: no page address and no store"
                     : $"{line}: {url.Host} is not one of the shops in appsettings.json");
                 continue;
             }
@@ -289,7 +302,7 @@ public sealed partial class ManualPriceImport
         return (amount.Success ? PriceParser.Parse(amount.Value) : null, struck);
     }
 
-    private static string? ShopKey(IReadOnlyList<Shop> shops, string? name)
+    private static string? ShopKey(IReadOnlyList<Shop> shops, string? name, string? currency = null)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -297,8 +310,50 @@ public sealed partial class ManualPriceImport
         }
 
         name = StripMarkup(name);
-        return shops.FirstOrDefault(s => string.Equals(s.Key, name, StringComparison.OrdinalIgnoreCase)
-                                         || string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase))?.Key;
+        var exact = shops.FirstOrDefault(s => string.Equals(s.Key, name, StringComparison.OrdinalIgnoreCase)
+                                              || string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase)
+                                              || string.Equals(s.Key, $"manual-{Slug(name)}", StringComparison.Ordinal));
+        if (exact is not null)
+        {
+            return exact.Key;
+        }
+
+        // "Levi's US", "Clarks UK": the shop's name plus a country, when the currency agrees.
+        var space = name.LastIndexOf(' ');
+        if (space <= 0 || name.Length - space - 1 is < 2 or > 3)
+        {
+            return null;
+        }
+
+        var bare = name[..space];
+        return shops.FirstOrDefault(s =>
+            (string.Equals(s.Name, bare, StringComparison.OrdinalIgnoreCase) || string.Equals(s.Key, bare, StringComparison.OrdinalIgnoreCase))
+            && (currency is null || s.Currency == currency))?.Key;
+    }
+
+    private static string? ComposeTitle(string? brand, string? model, string? colour, string? styleCode)
+    {
+        var parts = new[] { brand, model, colour, styleCode }.Where(p => p is not null).Select(p => StripMarkup(p!)).ToArray();
+        return parts.Length == 0 || (brand is null && model is null) ? null : string.Join(' ', parts);
+    }
+
+    internal static string Slug(string value) => NonWord().Replace(value.ToLowerInvariant(), "-").Trim('-');
+
+    /// <summary>A store the app does not collect from: its own disabled shop, so its prices still count as history.</summary>
+    private async Task<Shop> AddStoreShopAsync(List<Shop> shops, string store, Uri? url, string currency, CancellationToken cancellationToken)
+    {
+        var shop = new Shop
+        {
+            Key = OutsideEvidenceWriter.Truncate($"manual-{Slug(store)}", 64),
+            Name = OutsideEvidenceWriter.Truncate(store, 200),
+            BaseUrl = url is null ? $"https://{Slug(store)}.invalid" : $"{url.Scheme}://{url.Host}",
+            Currency = currency.Length == 3 ? currency : "USD",
+            Enabled = false,
+        };
+        _db.Shops.Add(shop);
+        await _db.SaveChangesAsync(cancellationToken);
+        shops.Add(shop);
+        return shop;
     }
 
     /// <summary>A product without a page address: the shop's product with the same title, or a new one keyed by the title.</summary>

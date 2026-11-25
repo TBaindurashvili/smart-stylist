@@ -48,8 +48,10 @@ public class ManualHistoryAndWatchTests
         var result = await host.InScopeAsync(sp => sp.GetRequiredService<ManualPriceImport>().ImportAsync(new StringReader(WardrobeTables), CancellationToken.None));
 
         Assert.Equal(5, result.Rows);
-        Assert.Equal(3, result.PricesAdded);
-        Assert.Contains(result.Skipped, s => s.Contains("Mystery Shop"));
+        // A store the app doesn't collect from gets its own disabled shop, so its price still counts.
+        Assert.Equal(4, result.PricesAdded);
+        Assert.DoesNotContain(result.Skipped, s => s.Contains("Mystery Shop"));
+        Assert.True(await host.InScopeAsync(sp => sp.GetRequiredService<CatalogDbContext>().Shops.AnyAsync(s => s.Key == "manual-mystery-shop" && !s.Enabled)));
         Assert.Contains(result.Skipped, s => s.Contains("sanity check"));
 
         var snapshots = await host.InScopeAsync(sp => sp.GetRequiredService<CatalogDbContext>().PriceSnapshots.Include(s => s.Product)
