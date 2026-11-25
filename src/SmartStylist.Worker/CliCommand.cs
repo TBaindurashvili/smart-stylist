@@ -15,7 +15,7 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
     string? Date = null, string? Size = null)
 {
     private static readonly string[] Commands =
-        ["collect", "report", "migrate", "install-browser", "probe", "newsletters", "awin", "awin-feeds", "detect", "wayback", "import-prices", "watch"];
+        ["collect", "report", "migrate", "install-browser", "probe", "newsletters", "awin", "awin-feeds", "detect", "wayback", "import-prices", "watch", "catalogue"];
 
     public static CliCommand? Parse(string[] args)
     {
@@ -78,7 +78,7 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
             return await ProbeAsync(provider.GetRequiredService<ProductPageProbe>(), cancellationToken);
         }
 
-        if (Name is "migrate" or "collect" or "newsletters" or "awin" or "detect" or "wayback" or "import-prices" or "watch")
+        if (Name is "migrate" or "collect" or "newsletters" or "awin" or "detect" or "wayback" or "import-prices" or "watch" or "catalogue")
         {
             await provider.GetRequiredService<CatalogDbContext>().Database.MigrateAsync(cancellationToken);
             await provider.GetRequiredService<WardrobeDbContext>().Database.MigrateAsync(cancellationToken);
@@ -127,6 +127,14 @@ internal sealed record CliCommand(string Name, IReadOnlyList<string> ShopKeys, i
         if (Name == "watch")
         {
             await WatchAsync(provider.GetRequiredService<BrowserWatchService>(), runLog, cancellationToken);
+        }
+
+        if (Name == "catalogue")
+        {
+            var text = new StringWriter();
+            ReportPrinter.Print(await provider.GetRequiredService<CatalogueReport>().BuildAsync(cancellationToken), text);
+            Console.Write(text);
+            runLog.WriteLine($"Catalogue:{Environment.NewLine}{text}");
         }
 
         if (Name is "awin" or "awin-feeds")

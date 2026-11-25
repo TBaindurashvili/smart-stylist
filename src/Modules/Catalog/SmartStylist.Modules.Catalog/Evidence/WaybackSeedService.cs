@@ -109,7 +109,7 @@ public sealed class WaybackSeedService
         var shop = await OutsideEvidenceWriter.FindShopAsync(_db, pageUrl, shopKey, cancellationToken);
         if (shop is null)
         {
-            return new WaybackSeedResult(0, 0, 0, 0, [$"{pageUrl.Host}: not one of the shops in appsettings.json"]);
+            return new WaybackSeedResult(0, 0, 0, 0, [$"{pageUrl.Host}: not one of the shops in catalogue.json"]);
         }
 
         var now = _time.GetUtcNow();

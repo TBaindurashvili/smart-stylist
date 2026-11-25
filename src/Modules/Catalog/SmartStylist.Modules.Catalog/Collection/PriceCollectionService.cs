@@ -39,7 +39,7 @@ public sealed class PriceCollectionService
     public async Task<CollectionRun> CollectAsync(string shopKey, int? maxProducts, CancellationToken cancellationToken)
     {
         var shop = await _db.Shops.SingleOrDefaultAsync(s => s.Key == shopKey, cancellationToken)
-            ?? throw new InvalidOperationException($"Unknown shop '{shopKey}'. Check Catalog:Shops in appsettings.json.");
+            ?? throw new InvalidOperationException($"Unknown shop '{shopKey}'. Check Catalog:Shops in catalogue.json.");
 
         var run = new CollectionRun { Shop = shop, StartedAt = _time.GetUtcNow() };
         _db.CollectionRuns.Add(run);

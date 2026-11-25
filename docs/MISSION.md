@@ -54,20 +54,31 @@ Success after 3 months: **"I stopped buying things I don't wear"** and **"I save
 Each item is one worker thread. When one is done, tick it, add what was learned, and keep this
 list at 3-5 items.
 
-1. **Quality catalogue.** A curated list of high-quality brands and shops (men's and women's)
-   with how each can be read (feed, API, email, extension). This replaces "which shops can we
-   scrape" with "which shops matter".
-2. **Style profile and quiz.** A first quiz that captures a person's style, sizes and no-go
-   items, stored per user. This is the base for everything personal.
-3. **Smart pick and notification.** One score per item for a given person (quality, style fit,
+1. **Style profile and quiz.** A first quiz that captures a person's style, sizes and no-go
+   items, stored per user. This is the base for everything personal. Match on the catalogue's `Styles` and
+   `Categories` words.
+2. **Smart pick and notification.** One score per item for a given person (quality, style fit,
    size confidence, price vs realistic low) and a rule for when it is worth telling them. First
    channel: Telegram or daily email.
-4. **First outside user ready.** Sign-up, their own profile, and their own picks.
+3. **First outside user ready.** Sign-up, their own profile, and their own picks.
+4. **Close the catalogue's gaps.** About 9 brands (mostly women's) have no working price source and most others only have sale emails:
+   try the untried shops (`detect`, `probe`, extension), and decide on one shared app inbox subscribed to every
+   catalogue shop's newsletter (`NewsletterInbox: "shared"`), so outside users do not depend on Temo's Gmail.
 
 Later: landed cost in GEL on every pick, forwarder declarations and tracking in the app,
 phone app, Armenia.
 
 ## Done
+
+- **Quality catalogue** (2026-11-25). `catalogue.json` in the Catalog module: 41 brands (36 for women, 37 for men) with
+  categories, style words and why each is quality, and 51 shops (brand stores and retailers). Each brand shows its best
+  working price source (1 feed, 2 page data, 3 sale emails, 4 extension) and what was priced in 30 days: `catalogue`
+  CLI and `/catalogue`. Learned: Temo's Gmail already gets ~35 quality shops' newsletters, so sale emails are today's
+  main source (29 brands); only Uniqlo has a daily feed, J.Crew and lululemon the Chrome watch, and about 9 brands (mostly
+  women's) have nothing yet. Awin applications sit on brands because they are country stores (Lacoste UK/FR/DE); two
+  shops on one site are refused because the extension could not tell them apart. Blocked shops now say who blocks them
+  (`BlockedBy`); Under Armour stays dropped; Dressup.ge stays for the extension. Taylor Stitch and Reigning Champ were
+  missing from the extension; a test now checks every shop is covered.
 
 - **Codebase health pass** (2026-11-25). Architecture note in [ARCHITECTURE.md](ARCHITECTURE.md). Learned: the
   code had little dead code but one big copy: the product + price save was written three times, and Awin prices

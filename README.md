@@ -12,7 +12,7 @@ a browser extension, judges whether a sale is real, and keeps a fit ledger.
 | `src/Modules/Catalog` | The Catalog module: shops, products, daily price snapshots, collectors, the data-quality report. |
 | `src/Modules/Wardrobe` | The Wardrobe module: the fit ledger and size advice. |
 | `src/SmartStylist.Worker` | Background host. Runs Hangfire and one daily price job per shop. Also a small CLI (`collect`, `report`). |
-| `src/SmartStylist.Web` | Blazor web app: data quality (`/`), deals (`/deals`), fit ledger (`/fit`), the extension and price-history APIs, the Hangfire dashboard. |
+| `src/SmartStylist.Web` | Blazor web app: data quality (`/`), the quality catalogue (`/catalogue`), deals (`/deals`), fit ledger (`/fit`), the extension and price-history APIs, the Hangfire dashboard. |
 | `tests/` | Parser tests with fixture pages, end-to-end tests against in-memory SQLite, and a few on real Postgres (need Docker). |
 
 It is a modular monolith: each business area becomes a module under `src/Modules` with its own
@@ -139,11 +139,35 @@ per day; a second run on the same day overwrites it.
 Failing shops list the reason under the table, such as "HTTP 403" (blocked) or "no product URLs in the sitemap"
 (the URL pattern needs tuning).
 
-## The shops
+## The quality catalogue: brands and shops
 
-Shops are listed in `Catalog:Shops` in `src/SmartStylist.Worker/appsettings.json`. Each one that is off or treated
-specially has a `Note` saying why (blocked by bot protection, geo-blocked, watch only, dropped). Blocked shops stay
-listed with `"Enabled": false` so their sale emails, Awin feed and extension prices still match them.
+`src/Modules/Catalog/SmartStylist.Modules.Catalog/catalogue.json` is the curated list: **brands** worth owning (men's
+and women's, with categories, style words and one line on why the quality is real) and the **shops** that sell them,
+the brand's own store first, then retailers such as Mr Porter or REI. Both hosts load it; the app refuses to start
+when it has a mistake (a brand naming a missing shop, two shops on one site, an unknown inbox) and says which.
+
+Each brand is read by the best price source that works at any of its shops, in this order:
+
+1. **Feed**: a joined Awin programme, a Shopify `products.json` or the Uniqlo API. Every product, every day.
+2. **PageData**: the daily JSON-LD crawl, or the real-Chrome watch for J.Crew and lululemon.
+3. **SaleEmail**: the shop's newsletter (`"NewsletterInbox": "personal"` = it reaches your Gmail). Prices only when a sale is on.
+4. **Extension**: the browser extension while you look at a page (`"ExtensionWorks": true` once it saved a price there).
+
+```bash
+dotnet run --project src/SmartStylist.Worker -- catalogue    # each brand's best working source and what was priced in 30 days
+```
+
+The same view is on the web app at `/catalogue`. The command also lists what is waiting (Awin applications, the US
+egress) and the shops nobody has tried yet.
+
+Shop fields that matter here: `"Enabled": false` with `"BlockedBy"` (who blocks the crawl) for blocked shops; `false`
+without it for shops added but not tried yet (run `detect` and `probe`, then turn them on). Blocked and untried shops
+stay listed so their sale emails, Awin feed and extension prices still match them. A brand's Awin applications sit on
+the brand (`"Awin": [{"Programme": "Lacoste UK", "Status": "Pending"}]`), because they are often a country store.
+
+Not in the catalogue on purpose: Under Armour (cancels forwarder orders, kept as `Dropped`), and fast-fashion or
+mass-market senders such as Mango, GU, Nike, Calvin Klein and Decathlon. Dressup.ge stays as a local shop for the
+extension until the brands it carries are added.
 
 The `ProductUrlPattern` values are educated guesses at each shop's product URL shape. If a shop fails with "no
 product URLs in the sitemap", open its sitemap in a browser and fix the pattern, or set `SitemapUrl` directly. If
@@ -169,7 +193,7 @@ with `Source = Extension`. The popup shows the price, sizes in stock and the low
 To use it, start the web app, open `chrome://extensions`, turn on Developer mode, choose **Load unpacked** and pick
 the `extension` folder. Nothing is saved while the app is off; the toolbar icon then shows a red `!`.
 
-A new shop has to be added both to `Catalog:Shops` and to `matches` in `extension/manifest.json`.
+A new shop has to be added both to `catalogue.json` and to `matches` in `extension/manifest.json`; a test fails when one is missing.
 
 ## Outside evidence: history before two weeks
 
@@ -217,7 +241,7 @@ The web app serves the numbers the stylist layer needs:
 
 Page reading tries, in order: schema.org JSON-LD, microdata, the app state the page embeds (`__NEXT_DATA__`,
 `__INITIAL_STATE__`, `__PRELOADED_STATE__`, JSON `__NUXT__`), then Open Graph tags. Each price is stored per SKU:
-product + colour + size. Shops in `Catalog:Shops` can carry `AcceptsForwarder`, `AcceptsForeignCard` and `CheckoutNote`,
+product + colour + size. Shops in `catalogue.json` can carry `AcceptsForwarder`, `AcceptsForeignCard` and `CheckoutNote`,
 learned from real orders; the data-quality page shows them with the detected platform.
 
 ## Fit ledger
@@ -240,7 +264,7 @@ dotnet run --project src/SmartStylist.Worker -- awin         # import today's pr
 
 With the key set, the worker also imports daily on `Awin:Cron` (06:00 UTC). `Awin:FeedIds` limits the import to
 some feeds; empty means every joined programme. Up to `Awin:MaxProductsPerFeed` (5000) products per feed are saved.
-Each advertiser gets its own shop, `awin-<advertiser id>` (no crawler runs for it), unless a shop in `Catalog:Shops`
+Each advertiser gets its own shop, `awin-<advertiser id>` (no crawler runs for it), unless a shop in `catalogue.json`
 has a matching `"AwinAdvertiserId"`. Feed prices show on the Deals page as "Awin feed".
 
 ## Prices from sale emails

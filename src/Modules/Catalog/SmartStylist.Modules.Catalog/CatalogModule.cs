@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SmartStylist.Modules.Catalog.Affiliates;
+using SmartStylist.Modules.Catalog.Catalogue;
 using SmartStylist.Modules.Catalog.Collection;
 using SmartStylist.Modules.Catalog.Evidence;
 using SmartStylist.Modules.Catalog.Newsletters;
@@ -32,13 +33,20 @@ public static class CatalogModule
         return new Npgsql.NpgsqlConnectionStringBuilder(connectionString) { Port = port }.ConnectionString;
     }
 
+    /// <summary>
+    /// Adds catalogue.json (the quality catalogue: brands and shops) to a host's configuration. Both hosts call it
+    /// before <see cref="AddCatalogModule"/>, so the brand and shop list lives in one file.
+    /// </summary>
+    public static IConfigurationBuilder AddQualityCatalogue(this IConfigurationBuilder configuration) =>
+        configuration.AddJsonFile(Path.Combine(AppContext.BaseDirectory, "catalogue.json"), optional: false, reloadOnChange: false);
+
     /// <summary>Registers the Catalog module: products, daily prices, collectors and the data-quality report.</summary>
     public static IServiceCollection AddCatalogModule(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<CatalogOptions>()
             .Bind(configuration.GetSection(CatalogOptions.SectionName))
-            .Validate(o => o.Shops.Select(s => s.Key).Distinct().Count() == o.Shops.Count, "Shop keys must be unique.")
             .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<CatalogOptions>, CatalogueValidation>();
         services.AddOptions<NewsletterOptions>().Bind(configuration.GetSection(NewsletterOptions.SectionName));
         services.AddOptions<AwinOptions>().Bind(configuration.GetSection(AwinOptions.SectionName));
 
@@ -100,6 +108,8 @@ public static class CatalogModule
         services.AddScoped<PlatformDetector>();
         services.AddScoped<DataQualityReport>();
         services.AddScoped<DealsReport>();
+        services.AddSingleton<QualityCatalogue>();
+        services.AddScoped<CatalogueReport>();
         services.AddScoped<PriceHistoryService>();
         services.AddSingleton(TimeProvider.System);
 

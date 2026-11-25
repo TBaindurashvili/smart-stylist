@@ -1,0 +1,78 @@
+@page "/catalogue"
+@using SmartStylist.Modules.Catalog
+@using SmartStylist.Modules.Catalog.Catalogue
+@inject CatalogueReport Report
+
+<PageTitle>Catalogue · Smart Stylist</PageTitle>
+
+<h1>Which brands are worth buying, and how do we see their prices?</h1>
+<p class="lead">
+    The quality catalogue: brands that make clothes worth owning, for men and women. Each is read by its best working
+    source: <strong>1 Feed</strong> (Awin, Shopify, Uniqlo API), <strong>2 Page data</strong> (crawl or Chrome watch),
+    <strong>3 Sale emails</strong>, <strong>4 Extension</strong>. The last column is what actually arrived in the
+    last @CatalogueReport.Days days. Edit the list in <code>catalogue.json</code>.
+</p>
+
+@if (_rows is null)
+{
+    <p>Loading…</p>
+}
+else
+{
+    <div class="summary">
+        @foreach (var group in _rows.GroupBy(r => r.Best?.Route).OrderBy(g => g.Key ?? (PriceRoute)99))
+        {
+            <span class="pill @Css(group.Key is null ? RouteState.NotTried : RouteState.Works)">@(group.Key is { } route ? $"{(int)route} {route}" : "No source yet"): @group.Count()</span>
+        }
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>Brand</th><th>For</th><th>Style</th><th>Best source</th><th>Other routes</th><th>Priced, @CatalogueReport.Days days</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _rows.OrderBy(r => r.Best?.Route ?? (PriceRoute)99).ThenBy(r => r.Brand.Name))
+                {
+                    <tr>
+                        <td title="@row.Brand.Why"><strong>@row.Brand.Name</strong><div class="muted">@string.Join(", ", row.Brand.Categories)</div></td>
+                        <td>@string.Join(" ", row.Brand.For)</td>
+                        <td>@string.Join(", ", row.Brand.Styles)</td>
+                        <td>
+                            @if (row.Best is { } best)
+                            {
+                                <span class="pill grade-clean">@((int)best.Route) @best.Route</span>
+                                <div class="muted">@best.Shop: @best.Detail</div>
+                            }
+                            else
+                            {
+                                <span class="pill grade-failing">none yet</span>
+                            }
+                        </td>
+                        <td>
+                            @foreach (var route in row.Routes.Where(r => r != row.Best && r.State != RouteState.NotSetUp))
+                            {
+                                <div><span class="pill @Css(route.State)">@route.State</span> @((int)route.Route) @route.Shop: @route.Detail</div>
+                            }
+                        </td>
+                        <td>@(row.ProductsPriced.Count == 0 ? "–" : string.Join(", ", row.ProductsPriced.Select(p => $"{p.Key} {p.Value}")))</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<BrandCoverage>? _rows;
+
+    private static string Css(RouteState state) => state switch
+    {
+        RouteState.Works => "grade-clean",
+        RouteState.Pending => "grade-usable",
+        RouteState.Blocked => "grade-failing",
+        _ => "grade-poor",
+    };
+
+    protected override async Task OnInitializedAsync() => _rows = await Report.BuildAsync(CancellationToken.None);
+}

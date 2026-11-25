@@ -41,6 +41,10 @@ their own writers because they are dated in the past and must never overwrite a 
 Page parsing is shared too: `JsonLdProductParser` reads JSON-LD, microdata, embedded app state
 (`EmbeddedStateParser`) and Open Graph tags for the crawl, the extension, the watch and `probe`.
 
+`Catalogue/QualityCatalogue` holds the curated brands: which shops sell each one, which price route works for it
+(feed, page data, sale email, extension; best first) and `FindBrand` to tell whether a product is a catalogue brand.
+`Reporting/CatalogueReport` adds what was actually priced per brand in the last 30 days (`catalogue` CLI, `/catalogue`).
+
 Reading prices back: `Reporting/DealsReport` (buy now / wait / fake sale / still learning, against the item's own
 history, no % thresholds), `PriceHistoryService` (the `/api/products/{id}/history` and `/api/drops` endpoints)
 and `DataQualityReport` (which shops give clean data).
@@ -51,7 +55,8 @@ and `DataQualityReport` (which shops give clean data).
   outside evidence says "less certain".
 - Shops that block automated visits are named (`BotWall`) and left alone: no CAPTCHA solving, no fingerprint
   faking, no logins, no checkout. Geo-blocked shops go through a configured egress (`EgressRouter`).
-- Shops live in config (`Catalog:Shops` in the worker's appsettings.json) and are synced to the database on start
+- Brands and shops live in `catalogue.json` in the Catalog module (the quality catalogue, loaded by both hosts with
+  `AddQualityCatalogue`), are checked on start (`QualityCatalogue.Problems`) and shops are synced to the database
   (`ShopCatalogSync`). A shop that blocks crawling stays listed with `Enabled: false` so its emails, feed and
   extension prices still match it.
 - Secrets only in user-secrets or environment variables.
@@ -63,5 +68,5 @@ and `DataQualityReport` (which shops give clean data).
 - Hangfire setup is repeated in both hosts' `Program.cs`.
 - Some services keep `internal` constructors and are registered by hand in `CatalogModule` because they take
   internal types (fetchers, collectors).
-- The shop list and its notes date from the first data test; the "Quality catalogue" item in MISSION.md replaces
-  it with a curated list.
+- Newsletter signups and extension results in `catalogue.json` are written by hand; nothing checks them against the
+  mailbox yet.

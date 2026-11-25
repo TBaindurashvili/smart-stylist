@@ -17,6 +17,7 @@ using SmartStylist.Worker;
 //   dotnet run -- awin                 -> import today's prices from the Awin product feeds
 //   dotnet run -- wayback [core|shop ...|url ...] [--limit N]  -> seed price history from archive.org copies
 //   dotnet run -- import-prices <file.csv|file.md> [--date YYYY-MM-DD]  -> import written-down prices (Wardrobe doc tables)
+//   dotnet run -- catalogue            -> the quality catalogue: each brand, its best working price source, last 30 days
 //   dotnet run -- watch add <url> [--size M] | remove <url> | list | run  -> the real-Chrome watch (J.Crew, lululemon)
 var command = CliCommand.Parse(args);
 
@@ -30,6 +31,7 @@ using var runLog = new RunLogFile(Path.Combine(builder.Environment.ContentRootPa
 builder.Logging.AddProvider(runLog);
 builder.Services.AddSingleton(runLog);
 
+builder.Configuration.AddQualityCatalogue();
 builder.Services.AddCatalogModule(builder.Configuration);
 builder.Services.AddWardrobeModule(CatalogModule.GetConnectionString(builder.Configuration));
 

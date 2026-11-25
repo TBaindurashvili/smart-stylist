@@ -16,6 +16,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The quality catalogue (brands and shops). Copied next to every host that references the module. -->
+    <None Update="catalogue.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="SmartStylist.Modules.Catalog.Tests" />
   </ItemGroup>
 

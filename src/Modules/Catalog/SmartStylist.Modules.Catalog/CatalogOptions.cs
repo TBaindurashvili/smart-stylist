@@ -49,6 +49,9 @@ public sealed class CatalogOptions
     public List<CoreProductOptions> CoreProducts { get; set; } = [];
 
     public List<ShopOptions> Shops { get; set; } = [];
+
+    /// <summary>The quality catalogue: brands worth buying and the shops that sell them (catalogue.json).</summary>
+    public List<BrandOptions> Brands { get; set; } = [];
 }
 
 public sealed class EgressOptions
@@ -165,6 +168,21 @@ public sealed class ShopOptions
     /// For shops whose pages load in Chrome but not over plain HTTP; the shop is never crawled in the browser.
     /// </summary>
     public bool BrowserWatch { get; set; }
+
+    /// <summary>
+    /// Which inbox gets this shop's newsletter: "personal" (the user's own Gmail, read over IMAP) or later "shared"
+    /// (one app inbox subscribed to every catalogue shop). Empty = nobody is signed up, so no sale emails arrive.
+    /// </summary>
+    public string? NewsletterInbox { get; set; }
+
+    /// <summary>The browser extension saved a price from one of this shop's pages (true) or could not (false). Null = not tried.</summary>
+    public bool? ExtensionWorks { get; set; }
+
+    /// <summary>
+    /// What stops the daily crawl, e.g. "Akamai" or "no price data on pages", for a shop with Enabled = false.
+    /// A shop that is off without it is simply not tried yet (run detect and probe, then turn it on).
+    /// </summary>
+    public string? BlockedBy { get; set; }
 
     /// <summary>Free text for people reading the config, e.g. why a shop is disabled. Not used by code.</summary>
     public string? Note { get; set; }

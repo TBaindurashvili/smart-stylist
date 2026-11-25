@@ -14,6 +14,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+builder.Configuration.AddQualityCatalogue();
 builder.Services.AddCatalogModule(builder.Configuration);
 builder.Services.AddWardrobeModule(CatalogModule.GetConnectionString(builder.Configuration));
 builder.Services.Configure<JsonOptions>(options => options.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));

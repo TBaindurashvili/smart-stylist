@@ -31,11 +31,16 @@ internal sealed class TestHost : IAsyncDisposable
     public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 10, 24, 5, 0, 0, TimeSpan.Zero));
 
     public TestHost(params ShopOptions[] shops)
-        : this(null, shops)
+        : this(null, shops, [])
     {
     }
 
-    private TestHost(string? postgres, ShopOptions[] shops)
+    public TestHost(BrandOptions[] brands, params ShopOptions[] shops)
+        : this(null, shops, brands)
+    {
+    }
+
+    private TestHost(string? postgres, ShopOptions[] shops, BrandOptions[] brands)
     {
         _postgres = postgres is not null;
 
@@ -48,6 +53,7 @@ internal sealed class TestHost : IAsyncDisposable
             o.MaxProductsPerShop = 50;
             o.PriceSanity.Floors = [new PriceFloorOptions { Category = "outerwear", Keywords = ["jacket", "coat"], Min = 20m }];
             o.Shops = [.. shops];
+            o.Brands = [.. brands];
         });
         if (postgres is not null)
         {
@@ -80,7 +86,7 @@ internal sealed class TestHost : IAsyncDisposable
         _services = services.BuildServiceProvider();
     }
 
-    public static TestHost OnPostgres(string connectionString, params ShopOptions[] shops) => new(connectionString, shops);
+    public static TestHost OnPostgres(string connectionString, params ShopOptions[] shops) => new(connectionString, shops, []);
 
     public async Task InitializeAsync()
     {

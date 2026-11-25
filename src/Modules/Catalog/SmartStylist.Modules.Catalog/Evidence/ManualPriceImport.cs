@@ -115,7 +115,7 @@ public sealed partial class ManualPriceImport
             {
                 skipped.Add(url is null
                     ? $"{line}: no page address and no store"
-                    : $"{line}: {url.Host} is not one of the shops in appsettings.json");
+                    : $"{line}: {url.Host} is not one of the shops in catalogue.json");
                 continue;
             }
 
